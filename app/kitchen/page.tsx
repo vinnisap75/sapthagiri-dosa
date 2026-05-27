@@ -132,6 +132,38 @@ export default function KitchenPage() {
     await sb.from("orders").update(patch).eq("id", order.id);
   }
 
+  /** Toggle a single item's done flag.  If every item in the parent order is
+   *  now done, also bump the order's status to "ready" (UX: kitchen has
+   *  visually crossed off all its work). */
+  async function toggleItemDone(
+    full: FullOrder,
+    item: OrderItemRow,
+    forceDone?: boolean
+  ) {
+    const nextDone = forceDone !== undefined ? forceDone : !item.is_done;
+    const sb = supabase();
+    await sb
+      .from("order_items")
+      .update({
+        is_done: nextDone,
+        done_at: nextDone ? new Date().toISOString() : null,
+      })
+      .eq("id", item.id);
+
+    // If every item is now done AND order is not yet ready/served, mark ready.
+    const allDone =
+      full.items.every((i) => (i.id === item.id ? nextDone : i.is_done)) &&
+      nextDone;
+    if (
+      allDone &&
+      full.order.status !== "ready" &&
+      full.order.status !== "served" &&
+      full.order.status !== "cancelled"
+    ) {
+      await setStatus(full.order, "ready");
+    }
+  }
+
   return (
     <main className="min-h-screen pb-16">
       <header className="bg-sapthagiri-burgundy text-white sticky top-0 z-30">
@@ -226,6 +258,7 @@ export default function KitchenPage() {
                   now={now}
                   queueAll={active}
                   onSetStatus={setStatus}
+                  onToggleItem={(item, forceDone) => toggleItemDone(o, item, forceDone)}
                 />
               ))}
           </div>
@@ -327,13 +360,16 @@ function OrderCard({
   now,
   queueAll,
   onSetStatus,
+  onToggleItem,
 }: {
   full: FullOrder;
   now: Date;
   queueAll: FullOrder[];
   onSetStatus: (o: OrderRow, s: OrderRow["status"]) => void;
+  onToggleItem: (item: OrderItemRow, forceDone?: boolean) => void;
 }) {
   const { order, items } = full;
+  const doneCount = items.filter((i) => i.is_done).length;
   const cookMins = orderCookMinutes(
     items.map((i) => ({ menu_item_id: i.menu_item_id, quantity: i.quantity }))
   );
@@ -420,7 +456,7 @@ function OrderCard({
         </div>
       </div>
 
-      {/* Meta row — clock icon, item count, utensils equivalent */}
+      {/* Meta row — clock icon, item count, progress, badges */}
       <div className="px-4 py-2 border-b border-stone-200 text-sm text-stone-700 flex flex-wrap items-center gap-x-5 gap-y-1">
         <span className="flex items-center gap-1">
           <span className="text-stone-400">🕒</span>
@@ -429,9 +465,9 @@ function OrderCard({
             minute: "2-digit",
           })}
         </span>
-        <span className="flex items-center gap-1">
-          <span className="text-stone-400">🥡</span>
-          {totalItems} item{totalItems === 1 ? "" : "s"}
+        <span className="flex items-center gap-1 tabular-nums">
+          <span className="text-stone-400">✓</span>
+          {doneCount}/{items.length} done
         </span>
         {hasUttapam && (
           <span className="badge bg-orange-100 text-orange-800">uttapam</span>
@@ -443,22 +479,64 @@ function OrderCard({
         )}
       </div>
 
-      {/* Items list */}
-      <ul className="px-4 py-3 space-y-1.5 flex-1">
+      {/* To-do list — tap each row to cross it off as cooked */}
+      <ul className="px-2 py-2 flex-1">
         {items.map((i) => (
-          <li key={i.id} className="text-sm">
-            <div className="flex items-baseline justify-between gap-2">
-              <span>
-                <span className="font-semibold mr-1 tabular-nums">{i.quantity}</span>
-                {i.name}
+          <li key={i.id}>
+            <button
+              type="button"
+              onClick={() => onToggleItem(i)}
+              className={`w-full flex items-start gap-2 text-left px-2 py-2 rounded-lg hover:bg-stone-50 transition ${
+                i.is_done ? "opacity-60" : ""
+              }`}
+            >
+              <span
+                className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center text-xs flex-shrink-0 ${
+                  i.is_done
+                    ? "bg-green-600 border-green-600 text-white"
+                    : "bg-white border-stone-400"
+                }`}
+                aria-hidden
+              >
+                {i.is_done ? "✓" : ""}
               </span>
-              <span className="text-xs text-stone-400 tabular-nums">{i.cook_minutes}m</span>
-            </div>
-            {i.no_onion_garlic && (
-              <div className="ml-5 text-xs font-semibold text-amber-900 bg-amber-100 inline-block px-2 py-0.5 rounded mt-0.5">
-                🚫 NO ONION · NO GARLIC
-              </div>
-            )}
+              <span className="flex-1 min-w-0 text-sm">
+                <span
+                  className={`block ${
+                    i.is_done ? "line-through text-stone-500" : ""
+                  }`}
+                >
+                  <span className="font-semibold mr-1 tabular-nums">
+                    {i.quantity}×
+                  </span>
+                  {i.name}
+                  <span className="ml-2 text-xs text-stone-400 tabular-nums">
+                    {i.cook_minutes}m
+                  </span>
+                </span>
+                {i.addons && i.addons.length > 0 && (
+                  <span className="mt-0.5 flex flex-wrap gap-1">
+                    {i.addons.map((a) => (
+                      <span
+                        key={a}
+                        className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                          i.is_done
+                            ? "bg-stone-100 text-stone-400"
+                            : "bg-sapthagiri-burgundy text-white"
+                        }`}
+                      >
+                        + {a.replace(/-/g, " ")}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {i.no_onion_garlic && (
+                  <span className="mt-0.5 inline-block text-xs font-semibold text-amber-900 bg-amber-100 px-2 py-0.5 rounded">
+                    🚫 NO ONION · NO GARLIC
+                  </span>
+                )}
+              </span>
+            </button>
           </li>
         ))}
       </ul>

@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MENU, MenuItem } from "@/lib/menu";
+import { MENU, MenuItem, ADDONS } from "@/lib/menu";
 import { isValidTable } from "@/lib/tables";
 import { supabase } from "@/lib/supabase";
 
@@ -10,6 +10,7 @@ interface LineItem {
   itemId: string;
   qty: number;
   noOnionGarlic: boolean;
+  addons: string[];
 }
 
 function OrderInner() {
@@ -33,6 +34,7 @@ function OrderInner() {
         itemId: item.id,
         qty: 0,
         noOnionGarlic: false,
+        addons: [],
       };
       const next = Math.max(0, cur.qty + delta);
       return { ...prev, [item.id]: { ...cur, qty: next } };
@@ -43,6 +45,17 @@ function OrderInner() {
       const cur = prev[itemId];
       if (!cur) return prev;
       return { ...prev, [itemId]: { ...cur, noOnionGarlic: !cur.noOnionGarlic } };
+    });
+  }
+  function toggleAddon(itemId: string, addonId: string) {
+    setLines((prev) => {
+      const cur = prev[itemId];
+      if (!cur) return prev;
+      const has = cur.addons.includes(addonId);
+      const next = has
+        ? cur.addons.filter((a) => a !== addonId)
+        : [...cur.addons, addonId];
+      return { ...prev, [itemId]: { ...cur, addons: next } };
     });
   }
 
@@ -83,6 +96,7 @@ function OrderInner() {
 
       const itemRows = cartLines.map((l) => {
         const m = MENU.find((x) => x.id === l.itemId)!;
+        const cleanAddons = m.isCustomizable ? l.addons : [];
         return {
           order_id: orderRow.id,
           menu_item_id: m.id,
@@ -92,6 +106,7 @@ function OrderInner() {
           cook_minutes: m.cookMinutes,
           category: m.category,
           no_onion_garlic: l.noOnionGarlic && !!m.hasMasalaFilling,
+          addons: cleanAddons,
         };
       });
 
@@ -124,7 +139,8 @@ function OrderInner() {
     );
   }
 
-  const dosas = MENU.filter((m) => m.category === "dosa");
+  const dosas = MENU.filter((m) => m.category === "dosa" && !m.isCustomizable);
+  const custom = MENU.filter((m) => m.isCustomizable);
   const uttapams = MENU.filter((m) => m.category === "uttapam");
 
   return (
@@ -145,6 +161,22 @@ function OrderInner() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
+        <Section
+          title="Build your own"
+          subtitle="Pick a base dosa and any toppings you'd like"
+        >
+          {custom.map((m) => (
+            <ItemRow
+              key={m.id}
+              item={m}
+              line={lines[m.id]}
+              onBump={(d) => bump(m, d)}
+              onToggleNOG={() => toggleNOG(m.id)}
+              onToggleAddon={(addonId) => toggleAddon(m.id, addonId)}
+            />
+          ))}
+        </Section>
+
         <Section title="Dosa" subtitle="Served with sambar and chutney">
           {dosas.map((m) => (
             <ItemRow
@@ -153,6 +185,7 @@ function OrderInner() {
               line={lines[m.id]}
               onBump={(d) => bump(m, d)}
               onToggleNOG={() => toggleNOG(m.id)}
+              onToggleAddon={(addonId) => toggleAddon(m.id, addonId)}
             />
           ))}
         </Section>
@@ -165,6 +198,7 @@ function OrderInner() {
               line={lines[m.id]}
               onBump={(d) => bump(m, d)}
               onToggleNOG={() => toggleNOG(m.id)}
+              onToggleAddon={(addonId) => toggleAddon(m.id, addonId)}
             />
           ))}
         </Section>
@@ -245,14 +279,17 @@ function ItemRow({
   line,
   onBump,
   onToggleNOG,
+  onToggleAddon,
 }: {
   item: MenuItem;
   line?: LineItem;
   onBump: (delta: number) => void;
   onToggleNOG: () => void;
+  onToggleAddon: (addonId: string) => void;
 }) {
   const qty = line?.qty ?? 0;
   const nog = line?.noOnionGarlic ?? false;
+  const selectedAddons = line?.addons ?? [];
   return (
     <li className="px-4 py-3">
       <div className="flex items-start gap-3">
@@ -262,6 +299,11 @@ function ItemRow({
             {item.vegOption && (
               <span className="badge bg-green-100 text-green-800">
                 {item.vegOption}
+              </span>
+            )}
+            {item.isCustomizable && (
+              <span className="badge bg-sapthagiri-gold text-[#3a2410]">
+                Custom
               </span>
             )}
           </div>
@@ -286,6 +328,35 @@ function ItemRow({
           </button>
         </div>
       </div>
+
+      {qty > 0 && item.isCustomizable && (
+        <div className="mt-3 bg-stone-50 border border-stone-200 rounded-lg p-3">
+          <div className="text-xs uppercase tracking-wider text-stone-500 mb-2">
+            Pick your toppings
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ADDONS.map((a) => {
+              const on = selectedAddons.includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => onToggleAddon(a.id)}
+                  className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                    on
+                      ? "bg-sapthagiri-burgundy text-white border-sapthagiri-burgundy"
+                      : "bg-white text-stone-700 border-stone-300 hover:border-stone-500"
+                  }`}
+                >
+                  {on ? "✓ " : "+ "}
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {qty > 0 && item.hasMasalaFilling && (
         <label className="mt-3 flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer">
           <input

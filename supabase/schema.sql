@@ -34,6 +34,11 @@ create table if not exists public.order_items (
   category     text not null check (category in ('dosa','uttapam')),
   -- Jain-style: swap the masala filling to no-onion-no-garlic mashed potato.
   no_onion_garlic boolean not null default false,
+  -- Build-your-own toppings: e.g. {paneer, cheese, mysore-chutney, chilli}
+  addons       text[] not null default '{}',
+  -- Kitchen has crossed this item off the to-do list.
+  is_done      boolean not null default false,
+  done_at      timestamptz,
   notes        text
 );
 

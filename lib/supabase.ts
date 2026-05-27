@@ -45,6 +45,11 @@ export interface OrderItemRow {
   cook_minutes: number;
   category: "dosa" | "uttapam";
   no_onion_garlic: boolean;
+  /** Add-on slugs selected by the customer (from lib/menu.ts ADDONS). */
+  addons: string[];
+  /** Kitchen has crossed this item off the to-do list. */
+  is_done: boolean;
+  done_at: string | null;
   notes: string | null;
 }
 

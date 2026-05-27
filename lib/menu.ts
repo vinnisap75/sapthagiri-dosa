@@ -16,7 +16,29 @@ export interface MenuItem {
   /** Has a masala (mashed-potato) filling that can be swapped to Jain-style
    *  no-onion-no-garlic on customer request. */
   hasMasalaFilling?: boolean;
+  /** Build-your-own — customer picks toppings from ADDONS list. */
+  isCustomizable?: boolean;
 }
+
+export interface AddonDef {
+  id: string;
+  label: string;
+  /** Optional extra time added when this addon is selected (minutes). */
+  extraMinutes?: number;
+  /** Internal pricing (never shown to customer). */
+  extraPrice?: number;
+}
+
+export const ADDONS: AddonDef[] = [
+  { id: "paneer",         label: "Paneer",         extraMinutes: 0.5, extraPrice: 2.00 },
+  { id: "mysore-chutney", label: "Mysore chutney", extraMinutes: 0,   extraPrice: 1.50 },
+  { id: "cheese",         label: "Cheese",         extraMinutes: 0,   extraPrice: 1.50 },
+  { id: "chilli",         label: "Chilli",         extraMinutes: 0,   extraPrice: 1.00 },
+];
+
+export const ADDONS_BY_ID: Record<string, AddonDef> = Object.fromEntries(
+  ADDONS.map((a) => [a.id, a])
+);
 
 // Average cook times:
 //   dosa: 5–7 min  → 6 min
@@ -46,6 +68,9 @@ export const MENU: MenuItem[] = [
   { id: "paneer-mysore-masala-dosa",no: 69, name: "Paneer Mysore Masala Dosa", description: "Spicy sauce crepe with cottage cheese, mashed potato, peas.",            price: 13.99, cookMinutes: DOSA_COOK, category: "dosa", hasMasalaFilling: true },
   { id: "cheese-masala-dosa",       no: 70, name: "Cheese Masala Dosa",        description: "Crepe sprinkled with mozzarella cheese.",                                price: 11.99, cookMinutes: DOSA_COOK, category: "dosa", hasMasalaFilling: true },
   { id: "spring-dosa",              no: 71, name: "Spring Dosa",               description: "Crepe filled with mashed potato and freshly grated vegetables, rolled and cut.", price: 13.99, cookMinutes: DOSA_COOK, category: "dosa", hasMasalaFilling: true },
+
+  // ───── BUILD YOUR OWN ─────
+  { id: "custom-dosa",              no: null, name: "Build Your Own Dosa",     description: "Pick your toppings — paneer, mysore chutney, cheese, chilli, or any combination.", price: 9.99, cookMinutes: DOSA_COOK, category: "dosa", vegOption: "V", isCustomizable: true },
 
   // ───── UTTAPAM ─────
   { id: "plain-uttapam",            no: null, name: "Plain Uttapam",           description: "Thick rice & lentil pancake.",                                           price: 9.99,  cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V" },

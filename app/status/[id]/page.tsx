@@ -217,6 +217,18 @@ export default function StatusPage() {
                 <div className="font-medium">
                   {i.quantity} × {i.name}
                 </div>
+                {i.addons && i.addons.length > 0 && (
+                  <div className="text-xs text-stone-700 mt-1 flex flex-wrap gap-1">
+                    {i.addons.map((a) => (
+                      <span
+                        key={a}
+                        className="bg-sapthagiri-cream border border-sapthagiri-gold/40 px-2 py-0.5 rounded-full"
+                      >
+                        + {a.replace(/-/g, " ")}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {i.no_onion_garlic && (
                   <div className="text-xs text-amber-800 mt-0.5">
                     🚫 No onion, no garlic (Jain masala)
