@@ -23,22 +23,36 @@ export interface MenuItem {
 export interface AddonDef {
   id: string;
   label: string;
+  /** Which categories of items can take this addon. */
+  availableFor: ("dosa" | "uttapam")[];
   /** Optional extra time added when this addon is selected (minutes). */
   extraMinutes?: number;
   /** Internal pricing (never shown to customer). */
   extraPrice?: number;
 }
 
+/** Full canonical list. Uttapam-only toppings exclude mysore chutney, cheese,
+ *  and aloo masala per the kitchen — they don't pair with the thicker batter. */
 export const ADDONS: AddonDef[] = [
-  { id: "paneer",         label: "Paneer",         extraMinutes: 0.5, extraPrice: 2.00 },
-  { id: "mysore-chutney", label: "Mysore chutney", extraMinutes: 0,   extraPrice: 1.50 },
-  { id: "cheese",         label: "Cheese",         extraMinutes: 0,   extraPrice: 1.50 },
-  { id: "chilli",         label: "Chilli",         extraMinutes: 0,   extraPrice: 1.00 },
+  { id: "paneer",         label: "Paneer",         availableFor: ["dosa", "uttapam"], extraMinutes: 0.5, extraPrice: 2.00 },
+  { id: "onion",          label: "Onion",          availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.50 },
+  { id: "aloo-masala",    label: "Masala (Aloo)",  availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 1.00 },
+  { id: "mysore-chutney", label: "Mysore chutney", availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 1.50 },
+  { id: "chilli",         label: "Chilli",         availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 1.00 },
+  { id: "tomato",         label: "Tomato",         availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.50 },
+  { id: "cheese",         label: "Cheese",         availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 1.50 },
+  { id: "cilantro",       label: "Cilantro",       availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.25 },
+  { id: "podi",           label: "Podi",           availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.50 },
 ];
 
 export const ADDONS_BY_ID: Record<string, AddonDef> = Object.fromEntries(
   ADDONS.map((a) => [a.id, a])
 );
+
+/** Filter the global addon list down to what makes sense for the given category. */
+export function addonsForCategory(cat: MenuCategory): AddonDef[] {
+  return ADDONS.filter((a) => a.availableFor.includes(cat));
+}
 
 // Average cook times:
 //   dosa: 5–7 min  → 6 min
@@ -70,7 +84,7 @@ export const MENU: MenuItem[] = [
   { id: "spring-dosa",              no: 71, name: "Spring Dosa",               description: "Crepe filled with mashed potato and freshly grated vegetables, rolled and cut.", price: 13.99, cookMinutes: DOSA_COOK, category: "dosa", hasMasalaFilling: true },
 
   // ───── BUILD YOUR OWN ─────
-  { id: "custom-dosa",              no: null, name: "Build Your Own Dosa",     description: "Pick your toppings — paneer, mysore chutney, cheese, chilli, or any combination.", price: 9.99, cookMinutes: DOSA_COOK, category: "dosa", vegOption: "V", isCustomizable: true },
+  { id: "custom-dosa",              no: null, name: "Build Your Own Dosa",     description: "Pick your toppings — paneer, onion, masala, mysore chutney, chilli, tomato, cheese, cilantro, podi, or any combination.", price: 9.99, cookMinutes: DOSA_COOK, category: "dosa", vegOption: "V", isCustomizable: true },
 
   // ───── UTTAPAM ─────
   { id: "plain-uttapam",            no: null, name: "Plain Uttapam",           description: "Thick rice & lentil pancake.",                                           price: 9.99,  cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V" },
@@ -79,6 +93,9 @@ export const MENU: MenuItem[] = [
   { id: "tomato-peas-uttapam",      no: null, name: "Tomato Peas Uttapam",     description: "Uttapam topped with tomato and green peas.",                             price: 10.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V" },
   { id: "vegetable-uttapam",        no: null, name: "Vegetable Uttapam",       description: "Uttapam topped with mixed vegetables.",                                  price: 11.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V" },
   { id: "coconut-uttapam",          no: null, name: "Coconut Uttapam",         description: "Uttapam topped with fresh grated coconut.",                              price: 10.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V" },
+
+  // ───── BUILD YOUR OWN UTTAPAM ─────
+  { id: "custom-uttapam",           no: null, name: "Build Your Own Uttapam",  description: "Pick your toppings — paneer, onion, masala, mysore chutney, chilli, tomato, cheese, cilantro, podi, or any combination.", price: 11.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V", isCustomizable: true },
 ];
 
 export const MENU_BY_ID: Record<string, MenuItem> = Object.fromEntries(

@@ -16,7 +16,17 @@ create table if not exists public.orders (
   cooking_started_at  timestamptz,
   ready_at            timestamptz,
   served_at           timestamptz,
-  total_cents         integer not null default 0
+  total_cents         integer not null default 0,
+  -- Customer cooking preference, applied to every dosa in this order.
+  cook_medium         text not null default 'oil'
+                        check (cook_medium in ('ghee','oil')),
+  -- Texture preference: soft (less browned) or crispy (default).
+  crispiness          text not null default 'crispy'
+                        check (crispiness in ('soft','crispy')),
+  -- One-shot 1–5 rating + optional note submitted after the order is served.
+  rating              int check (rating between 1 and 5),
+  rating_at           timestamptz,
+  rating_note         text
 );
 
 create index if not exists orders_status_created_idx

@@ -8,7 +8,7 @@ export interface DiningTable {
 }
 
 export const TABLES: DiningTable[] = [
-  // Section A — 8 tables, 6 seats each
+  // Section A — 7 customer tables, 6 seats each (A8 excluded per request)
   { id: "A1", seats: 6, section: "A" },
   { id: "A2", seats: 6, section: "A" },
   { id: "A3", seats: 6, section: "A" },
@@ -16,7 +16,6 @@ export const TABLES: DiningTable[] = [
   { id: "A5", seats: 6, section: "A" },
   { id: "A6", seats: 6, section: "A" },
   { id: "A7", seats: 6, section: "A" },
-  { id: "A8", seats: 6, section: "A" },
 
   // Section B — small 2-tops + larger 4-tops
   { id: "B1", seats: 2, section: "B" },
@@ -33,12 +32,8 @@ export const TABLES: DiningTable[] = [
   { id: "C3", seats: 4, section: "C" },
   { id: "C4", seats: 4, section: "C" },
 
-  // Singles / reserved
-  { id: "Station",    seats: 1, section: "Other" },
-  { id: "PURV",       seats: 1, section: "Other" },
-  { id: "Reserved-1", seats: 1, section: "Other" },
-  { id: "Reserved-2", seats: 1, section: "Other" },
-  { id: "Reserved-3", seats: 1, section: "Other" },
+  // Station, PURV, and Reserved areas intentionally excluded from QR codes —
+  // they're not customer-facing tables.
 ];
 
 export const TABLE_IDS: string[] = TABLES.map((t) => t.id);

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase, OrderRow, OrderItemRow } from "@/lib/supabase";
@@ -8,6 +9,7 @@ import {
   waitRangeLabel,
   OrderLite,
 } from "@/lib/timing";
+import { ADDONS_BY_ID } from "@/lib/menu";
 
 interface ActiveQueue {
   order: OrderRow;
@@ -24,13 +26,20 @@ export default function StatusPage() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<Date>(new Date());
 
-  // Re-render every 15s so wait estimates count down.
+  // Rating UI state
+  const [chosenRating, setChosenRating] = useState<number | null>(null);
+  const [ratingNote, setRatingNote] = useState("");
+  const [submittingRating, setSubmittingRating] = useState(false);
+
+  // Call-Server UI state
+  const [callingServer, setCallingServer] = useState(false);
+  const [serverCalled, setServerCalled] = useState(false);
+
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(t);
   }, []);
 
-  // Initial load + realtime subscriptions.
   useEffect(() => {
     if (!orderId) return;
     let cancelled = false;
@@ -55,15 +64,11 @@ export default function StatusPage() {
     }
 
     async function loadQueue() {
-      const { data, error: qerr } = await sb
+      const { data } = await sb
         .from("orders")
         .select("*, order_items(menu_item_id, quantity)")
         .in("status", ["queued", "cooking"])
         .order("created_at", { ascending: true });
-      if (qerr) {
-        console.error(qerr);
-        return;
-      }
       if (cancelled) return;
       setQueue(
         (data ?? []).map((row: any) => ({
@@ -80,9 +85,7 @@ export default function StatusPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        () => {
-          load();
-        }
+        () => load()
       )
       .subscribe();
 
@@ -115,8 +118,7 @@ export default function StatusPage() {
       cooking_started_at: q.order.cooking_started_at,
       items: q.items,
     }));
-    const mins = estimateWaitMinutes(target, queueLite, now);
-    return waitRangeLabel(mins);
+    return waitRangeLabel(estimateWaitMinutes(target, queueLite, now));
   }, [order, items, queue, now]);
 
   const position = useMemo(() => {
@@ -128,6 +130,52 @@ export default function StatusPage() {
     );
     return active.length;
   }, [order, queue]);
+
+  async function callServer() {
+    if (!order || callingServer) return;
+    setCallingServer(true);
+    try {
+      const sb = supabase();
+      await sb.from("server_calls").insert({
+        table_id: order.table_id,
+        order_id: order.id,
+        reason: "From order status page",
+      });
+      setServerCalled(true);
+      setTimeout(() => setServerCalled(false), 4000);
+    } catch {
+      // ignore — they can flag staff directly
+    } finally {
+      setCallingServer(false);
+    }
+  }
+
+  async function submitRating() {
+    if (!order || chosenRating === null) return;
+    setSubmittingRating(true);
+    try {
+      const sb = supabase();
+      await sb
+        .from("orders")
+        .update({
+          rating: chosenRating,
+          rating_at: new Date().toISOString(),
+          rating_note: ratingNote.trim() || null,
+        })
+        .eq("id", order.id);
+      // local optimistic update
+      setOrder({
+        ...order,
+        rating: chosenRating,
+        rating_at: new Date().toISOString(),
+        rating_note: ratingNote.trim() || null,
+      });
+    } catch {
+      // swallow
+    } finally {
+      setSubmittingRating(false);
+    }
+  }
 
   if (error) {
     return (
@@ -153,7 +201,7 @@ export default function StatusPage() {
   };
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen pb-24">
       <header className="bg-sapthagiri-burgundy text-white">
         <div className="max-w-2xl mx-auto px-4 py-5">
           <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
@@ -186,8 +234,8 @@ export default function StatusPage() {
             </>
           ) : order.status === "served" ? (
             <>
-              <div className="text-5xl mb-2">✅</div>
-              <div className="text-xl font-display">Enjoy your meal</div>
+              <div className="text-5xl mb-2">🍽️</div>
+              <div className="text-xl font-display">Enjoy your meal!</div>
             </>
           ) : (
             <>
@@ -209,8 +257,72 @@ export default function StatusPage() {
           )}
         </div>
 
+        {/* Rating prompt after served */}
+        {order.status === "served" && (
+          <div className="card p-5">
+            {order.rating ? (
+              <div className="text-center">
+                <div className="text-2xl mb-1">
+                  {"⭐".repeat(order.rating)}
+                  {"☆".repeat(5 - order.rating)}
+                </div>
+                <p className="text-sm text-stone-600">Thanks for your feedback!</p>
+                {order.rating_note && (
+                  <p className="text-xs text-stone-500 mt-1 italic">
+                    "{order.rating_note}"
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                <h3 className="font-semibold text-center">
+                  How was your meal?
+                </h3>
+                <p className="text-xs text-stone-500 text-center mb-3">
+                  Tap a star to rate.
+                </p>
+                <div className="flex justify-center gap-2 mb-3">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setChosenRating(n)}
+                      className="text-3xl transition transform hover:scale-110"
+                      aria-label={`${n} stars`}
+                    >
+                      {chosenRating !== null && n <= chosenRating ? "⭐" : "☆"}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Leave a note (optional)"
+                  rows={2}
+                  value={ratingNote}
+                  onChange={(e) => setRatingNote(e.target.value)}
+                />
+                <button
+                  onClick={submitRating}
+                  disabled={chosenRating === null || submittingRating}
+                  className="mt-3 w-full btn-primary"
+                >
+                  {submittingRating ? "Sending…" : "Submit rating"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Order details */}
         <div className="card p-4">
           <h3 className="font-semibold mb-2">Your order</h3>
+          <div className="text-sm text-stone-700 flex flex-wrap gap-2 mb-3">
+            <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
+              {order.cook_medium === "ghee" ? "🧈 Amul Ghee" : "🛢️ Oil"}
+            </span>
+            <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
+              {order.crispiness === "crispy" ? "✨ Crispy" : "☁️ Soft"}
+            </span>
+          </div>
           <ul className="divide-y divide-stone-200">
             {items.map((i) => (
               <li key={i.id} className="py-2">
@@ -224,7 +336,7 @@ export default function StatusPage() {
                         key={a}
                         className="bg-sapthagiri-cream border border-sapthagiri-gold/40 px-2 py-0.5 rounded-full"
                       >
-                        + {a.replace(/-/g, " ")}
+                        + {ADDONS_BY_ID[a]?.label ?? a.replace(/-/g, " ")}
                       </span>
                     ))}
                   </div>
@@ -234,14 +346,44 @@ export default function StatusPage() {
                     🚫 No onion, no garlic (Jain masala)
                   </div>
                 )}
+                {i.masala_on_side && (
+                  <div className="text-xs text-sapthagiri-burgundy mt-0.5">
+                    ⚪ Masala on the side
+                  </div>
+                )}
               </li>
             ))}
           </ul>
           {order.notes && (
-            <p className="text-xs text-stone-500 mt-3">
-              Notes: <em>{order.notes}</em>
+            <p className="text-xs text-stone-500 mt-3 italic">
+              Note: "{order.notes}"
             </p>
           )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            href={`/order?table=${encodeURIComponent(order.table_id)}`}
+            className="rounded-lg border-2 border-sapthagiri-burgundy text-sapthagiri-burgundy bg-white text-center px-4 py-3 font-semibold hover:bg-sapthagiri-cream"
+          >
+            + Order more
+          </Link>
+          <button
+            onClick={callServer}
+            disabled={callingServer || serverCalled}
+            className={`rounded-lg border-2 text-center px-4 py-3 font-semibold ${
+              serverCalled
+                ? "bg-green-50 border-green-300 text-green-800"
+                : "bg-white border-stone-300 text-stone-700 hover:bg-stone-50"
+            }`}
+          >
+            {serverCalled
+              ? "✓ Server notified"
+              : callingServer
+              ? "Calling…"
+              : "🛎️ Call Server"}
+          </button>
         </div>
 
         <p className="text-xs text-center text-stone-500">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase, OrderRow, OrderItemRow } from "@/lib/supabase";
+import { supabase, OrderRow, OrderItemRow, ServerCallRow } from "@/lib/supabase";
 import {
   DISPLAY_BATCH,
   PARALLEL_SLOTS,
@@ -19,6 +19,7 @@ type Filter = "all" | "needs-action" | "in-progress" | "ready";
 
 export default function KitchenPage() {
   const [orders, setOrders] = useState<FullOrder[]>([]);
+  const [serverCalls, setServerCalls] = useState<ServerCallRow[]>([]);
   const [now, setNow] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -57,7 +58,18 @@ export default function KitchenPage() {
       }
     }
 
+    async function loadCalls() {
+      const { data } = await sb
+        .from("server_calls")
+        .select("*")
+        .is("resolved_at", null)
+        .order("created_at", { ascending: true });
+      if (cancelled) return;
+      setServerCalls((data ?? []) as ServerCallRow[]);
+    }
+
     load();
+    loadCalls();
     const channel = sb
       .channel("kitchen-orders")
       .on(
@@ -70,6 +82,11 @@ export default function KitchenPage() {
         { event: "*", schema: "public", table: "order_items" },
         () => load()
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "server_calls" },
+        () => loadCalls()
+      )
       .subscribe();
 
     return () => {
@@ -77,6 +94,14 @@ export default function KitchenPage() {
       sb.removeChannel(channel);
     };
   }, []);
+
+  async function resolveServerCall(id: string) {
+    const sb = supabase();
+    await sb
+      .from("server_calls")
+      .update({ resolved_at: new Date().toISOString() })
+      .eq("id", id);
+  }
 
   const active = useMemo(
     () =>
@@ -227,6 +252,40 @@ export default function KitchenPage() {
         <div className="max-w-7xl mx-auto px-6 mt-4">
           <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
             {error}
+          </div>
+        </div>
+      )}
+
+      {serverCalls.length > 0 && (
+        <div className="max-w-7xl mx-auto px-6 mt-4">
+          <div className="bg-amber-100 border-2 border-amber-400 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+            <span className="text-2xl animate-pulse">🛎️</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-amber-900 uppercase tracking-wider">
+                Server requested
+              </div>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {serverCalls.map((c) => (
+                  <div
+                    key={c.id}
+                    className="bg-white border border-amber-300 rounded-lg px-3 py-1.5 text-sm flex items-center gap-2"
+                  >
+                    <span className="font-display font-bold text-sapthagiri-burgundy">
+                      {c.table_id}
+                    </span>
+                    <span className="text-xs text-stone-500">
+                      · {timeSince(c.created_at, now)} ago
+                    </span>
+                    <button
+                      onClick={() => resolveServerCall(c.id)}
+                      className="ml-1 text-xs font-semibold text-green-700 hover:text-green-900"
+                    >
+                      ✓ done
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -456,8 +515,8 @@ function OrderCard({
         </div>
       </div>
 
-      {/* Meta row — clock icon, item count, progress, badges */}
-      <div className="px-4 py-2 border-b border-stone-200 text-sm text-stone-700 flex flex-wrap items-center gap-x-5 gap-y-1">
+      {/* Meta row — clock icon, item count, progress, cook prefs, badges */}
+      <div className="px-4 py-2 border-b border-stone-200 text-sm text-stone-700 flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="flex items-center gap-1">
           <span className="text-stone-400">🕒</span>
           {new Date(order.created_at).toLocaleTimeString([], {
@@ -469,12 +528,18 @@ function OrderCard({
           <span className="text-stone-400">✓</span>
           {doneCount}/{items.length} done
         </span>
+        <span className="badge bg-amber-50 text-amber-900 border border-amber-200">
+          {order.cook_medium === "ghee" ? "🧈 GHEE" : "🛢️ OIL"}
+        </span>
+        <span className="badge bg-blue-50 text-blue-900 border border-blue-200">
+          {order.crispiness === "crispy" ? "✨ CRISPY" : "☁️ SOFT"}
+        </span>
         {hasUttapam && (
-          <span className="badge bg-orange-100 text-orange-800">uttapam</span>
+          <span className="badge bg-orange-100 text-orange-800">UTTAPAM</span>
         )}
         {hasJain && (
           <span className="badge bg-amber-200 text-amber-900">
-            🚫 no onion / garlic
+            🚫 NO ONION/GARLIC
           </span>
         )}
       </div>
@@ -533,6 +598,11 @@ function OrderCard({
                 {i.no_onion_garlic && (
                   <span className="mt-0.5 inline-block text-xs font-semibold text-amber-900 bg-amber-100 px-2 py-0.5 rounded">
                     🚫 NO ONION · NO GARLIC
+                  </span>
+                )}
+                {i.masala_on_side && (
+                  <span className="mt-0.5 ml-1 inline-block text-xs font-semibold text-sapthagiri-burgundy bg-sapthagiri-cream px-2 py-0.5 rounded border border-sapthagiri-gold/40">
+                    ⚪ MASALA ON SIDE
                   </span>
                 )}
               </span>

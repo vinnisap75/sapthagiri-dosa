@@ -33,6 +33,14 @@ export interface OrderRow {
   ready_at: string | null;
   served_at: string | null;
   total_cents: number;
+  /** How the customer wants their dosas cooked (medium). */
+  cook_medium: "ghee" | "oil";
+  /** Texture preference for the dosa. */
+  crispiness: "soft" | "crispy";
+  /** 1–5 stars set by the customer once the order is served. */
+  rating: number | null;
+  rating_at: string | null;
+  rating_note: string | null;
 }
 
 export interface OrderItemRow {
@@ -45,12 +53,23 @@ export interface OrderItemRow {
   cook_minutes: number;
   category: "dosa" | "uttapam";
   no_onion_garlic: boolean;
+  /** Serve the masala (potato) filling on the side instead of inside the dosa. */
+  masala_on_side: boolean;
   /** Add-on slugs selected by the customer (from lib/menu.ts ADDONS). */
   addons: string[];
   /** Kitchen has crossed this item off the to-do list. */
   is_done: boolean;
   done_at: string | null;
   notes: string | null;
+}
+
+export interface ServerCallRow {
+  id: string;
+  table_id: string;
+  order_id: string | null;
+  reason: string | null;
+  created_at: string;
+  resolved_at: string | null;
 }
 
 export interface OrderWithItems extends OrderRow {
