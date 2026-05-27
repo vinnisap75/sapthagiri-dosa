@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase, OrderRow, OrderItemRow, ServerCallRow } from "@/lib/supabase";
 import {
   DISPLAY_BATCH,
@@ -26,12 +26,57 @@ export default function KitchenPage() {
   );
 }
 
+/** Loud notification ping when a new order arrives. Uses Web Audio so we
+ *  don't need a bundled mp3. Browser autoplay blocks unprimed AudioContexts,
+ *  so we lazily create one inside a user-gesture handler. */
+function playOrderChime(ctx: AudioContext) {
+  // A two-note ding-dong: A5 (880) then E5 (659) over 600ms.
+  const now = ctx.currentTime;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.5, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+  gain.connect(ctx.destination);
+  for (const [freq, when] of [[880, now], [659, now + 0.18]] as const) {
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.value = freq;
+    o.connect(gain);
+    o.start(when);
+    o.stop(when + 0.25);
+  }
+}
+
 function KitchenInner() {
   const [orders, setOrders] = useState<FullOrder[]>([]);
   const [serverCalls, setServerCalls] = useState<ServerCallRow[]>([]);
   const [now, setNow] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [soundOn, setSoundOn] = useState(false);
+
+  // Track which order IDs we've already announced so we only chime on truly new ones.
+  const seenOrderIdsRef = useRef<Set<string>>(new Set());
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  function enableSound() {
+    if (audioCtxRef.current) {
+      setSoundOn((v) => !v);
+      return;
+    }
+    try {
+      const AC =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      audioCtxRef.current = new AC();
+      // Play one quiet chime so the user hears confirmation it's working.
+      playOrderChime(audioCtxRef.current);
+      setSoundOn(true);
+    } catch {
+      // Audio API unavailable — silently fail.
+    }
+  }
 
   // Tick every second so timers update live.
   useEffect(() => {
@@ -51,8 +96,32 @@ function KitchenInner() {
           .order("created_at", { ascending: true });
         if (qerr) throw qerr;
         if (cancelled) return;
+        const rows = (data ?? []) as (OrderRow & { order_items: OrderItemRow[] })[];
+
+        // Detect newly-arrived ORDERS (still in active states) and chime.
+        const prevSize = seenOrderIdsRef.current.size;
+        const newActiveIds: string[] = [];
+        rows.forEach((r) => {
+          if (
+            !seenOrderIdsRef.current.has(r.id) &&
+            ["queued", "cooking"].includes(r.status)
+          ) {
+            newActiveIds.push(r.id);
+          }
+          seenOrderIdsRef.current.add(r.id);
+        });
+        // Skip the chime on the very first load (everything is "new" then).
+        if (
+          prevSize > 0 &&
+          newActiveIds.length > 0 &&
+          soundOn &&
+          audioCtxRef.current
+        ) {
+          playOrderChime(audioCtxRef.current);
+        }
+
         setOrders(
-          (data ?? []).map((row: any) => ({
+          rows.map((row) => ({
             order: row as OrderRow,
             items: (row.order_items ?? []) as OrderItemRow[],
           }))
@@ -155,7 +224,7 @@ function KitchenInner() {
         ? ready
         : filter === "served"
         ? served
-        : [...ready, ...cooking, ...queued]; // "All" — surface ready first
+        : [...cooking, ...queued]; // "All" = active work only (no ready/served clutter)
     return set;
   }, [filter, queued, cooking, ready, served]);
 
@@ -255,6 +324,17 @@ function KitchenInner() {
               <span className="text-sapthagiri-gold mr-1">Queued</span>
               <strong>{queued.length}</strong>
             </div>
+            <button
+              onClick={enableSound}
+              className={`text-xs uppercase tracking-wider px-2 py-1 rounded transition ${
+                soundOn
+                  ? "bg-sapthagiri-gold text-[#3a2410]"
+                  : "text-sapthagiri-gold hover:text-white border border-sapthagiri-gold/60"
+              }`}
+              title="Toggle new-order chime"
+            >
+              {soundOn ? "🔔 ON" : "🔕 Tap to enable sound"}
+            </button>
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </div>
@@ -265,8 +345,8 @@ function KitchenInner() {
         {/* Status filter tabs (mimics the DoorDash-style header) */}
         <div className="max-w-7xl mx-auto px-6 pb-3 flex gap-2 overflow-x-auto">
           <FilterPill
-            label="All"
-            count={active.length + ready.length}
+            label="Active"
+            count={active.length}
             active={filter === "all"}
             onClick={() => setFilter("all")}
           />
@@ -612,12 +692,12 @@ function OrderCard({
               }`}
             >
               <span
-                className={`mt-0.5 w-6 h-6 rounded-md border-2 flex items-center justify-center text-sm flex-shrink-0 ${
+                className={`mt-0.5 w-9 h-9 rounded-lg border-[3px] flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-sm ${
                   state === "done"
-                    ? "bg-green-600 border-green-600 text-white"
+                    ? "bg-green-600 border-green-700 text-white"
                     : state === "cooking"
-                    ? "bg-amber-400 border-amber-500 text-white animate-pulse"
-                    : "bg-white border-stone-400"
+                    ? "bg-amber-400 border-amber-600 text-white animate-pulse"
+                    : "bg-white border-stone-500 hover:border-sapthagiri-burgundy"
                 }`}
                 aria-hidden
               >
