@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background: #FAF6EE;
+  color: #1f1410;
+  min-height: 100vh;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-sapthagiri-burgundy text-white hover:bg-[#561624];
+  }
+  .btn-gold {
+    @apply btn bg-sapthagiri-gold text-[#3a2410] hover:bg-[#b8932f];
+  }
+  .btn-ghost {
+    @apply btn bg-white border border-stone-300 hover:bg-stone-50;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-stone-200;
+  }
+  .badge {
+    @apply inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide;
+  }
+}
+
+/* Hide non-essential UI when printing the QR sheet. */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+}
