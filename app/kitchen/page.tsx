@@ -53,29 +53,53 @@ function KitchenInner() {
   const [now, setNow] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  // Persist sound preference so refresh doesn't silently disable it.
+  // (Browser autoplay still requires a user gesture to first construct
+  //  AudioContext, but we remember the preference and remind the master.)
+  const SOUND_PREF_KEY = "sapthagiri-kitchen-sound-on";
   const [soundOn, setSoundOn] = useState(false);
 
   // Track which order IDs we've already announced so we only chime on truly new ones.
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // On mount: read the persisted preference. If it was on, render the toggle
+  // visually as "Tap to re-arm" so the master knows to tap to restore audio.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const v = window.localStorage.getItem(SOUND_PREF_KEY);
+    if (v === "1") setSoundOn(true);
+  }, []);
+
   function enableSound() {
-    if (audioCtxRef.current) {
-      setSoundOn((v) => !v);
+    // Toggle off: clear pref, stop future chimes (AudioCtx kept for re-enable)
+    if (soundOn && audioCtxRef.current) {
+      setSoundOn(false);
+      try {
+        window.localStorage.setItem(SOUND_PREF_KEY, "0");
+      } catch {}
       return;
     }
-    try {
-      const AC =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      audioCtxRef.current = new AC();
-      // Play one quiet chime so the user hears confirmation it's working.
-      playOrderChime(audioCtxRef.current);
-      setSoundOn(true);
-    } catch {
-      // Audio API unavailable — silently fail.
+    // Toggle on: create the audio context inside this user-gesture handler
+    if (!audioCtxRef.current) {
+      try {
+        const AC =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        audioCtxRef.current = new AC();
+      } catch {
+        return;
+      }
     }
+    // Play confirmation chime
+    try {
+      playOrderChime(audioCtxRef.current);
+    } catch {}
+    setSoundOn(true);
+    try {
+      window.localStorage.setItem(SOUND_PREF_KEY, "1");
+    } catch {}
   }
 
   // Tick every second so timers update live.
@@ -327,13 +351,19 @@ function KitchenInner() {
             <button
               onClick={enableSound}
               className={`text-xs uppercase tracking-wider px-2 py-1 rounded transition ${
-                soundOn
+                soundOn && audioCtxRef.current
                   ? "bg-sapthagiri-gold text-[#3a2410]"
+                  : soundOn
+                  ? "bg-amber-400 text-[#3a2410] animate-pulse"
                   : "text-sapthagiri-gold hover:text-white border border-sapthagiri-gold/60"
               }`}
               title="Toggle new-order chime"
             >
-              {soundOn ? "🔔 ON" : "🔕 Tap to enable sound"}
+              {soundOn && audioCtxRef.current
+                ? "🔔 ON"
+                : soundOn
+                ? "🔔 Tap to re-arm"
+                : "🔕 Tap to enable sound"}
             </button>
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -385,7 +415,15 @@ function KitchenInner() {
         </div>
       )}
 
-      {serverCalls.length > 0 && (
+      {(() => {
+        // Hide server calls older than 5 minutes — the master has either
+        // already handled them or they're stale.
+        const FIVE_MIN_MS = 5 * 60 * 1000;
+        const fresh = serverCalls.filter(
+          (c) => now.getTime() - new Date(c.created_at).getTime() < FIVE_MIN_MS
+        );
+        if (fresh.length === 0) return null;
+        return (
         <div className="max-w-7xl mx-auto px-6 mt-4">
           <div className="bg-amber-100 border-2 border-amber-400 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
             <span className="text-2xl animate-pulse">🛎️</span>
@@ -394,7 +432,7 @@ function KitchenInner() {
                 Server requested
               </div>
               <div className="flex flex-wrap gap-2 mt-1">
-                {serverCalls.map((c) => {
+                {fresh.map((c) => {
                   const isRava = c.reason && /rava/i.test(c.reason);
                   return (
                     <div
@@ -436,7 +474,8 @@ function KitchenInner() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       <section className="max-w-7xl mx-auto px-6 py-6">
         {visible.length === 0 ? (
