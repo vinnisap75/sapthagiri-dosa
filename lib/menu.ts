@@ -95,7 +95,7 @@ export const MENU: MenuItem[] = [
   { id: "coconut-uttapam",          no: null, name: "Coconut Uttapam",         description: "Uttapam topped with fresh grated coconut.",                              price: 10.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V" },
 
   // ───── BUILD YOUR OWN UTTAPAM ─────
-  { id: "custom-uttapam",           no: null, name: "Build Your Own Uttapam",  description: "Pick your toppings — paneer, onion, masala, mysore chutney, chilli, tomato, cheese, cilantro, podi, or any combination.", price: 11.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V", isCustomizable: true },
+  { id: "custom-uttapam",           no: null, name: "Build Your Own Uttapam",  description: "Pick your toppings — onion, chilli, tomato, cilantro, or any combination.", price: 11.99, cookMinutes: UTTAPAM_COOK, category: "uttapam", vegOption: "V", isCustomizable: true },
 ];
 
 export const MENU_BY_ID: Record<string, MenuItem> = Object.fromEntries(
