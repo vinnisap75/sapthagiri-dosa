@@ -16,7 +16,7 @@ interface FullOrder {
   items: OrderItemRow[];
 }
 
-type Filter = "all" | "needs-action" | "in-progress" | "ready";
+type Filter = "all" | "needs-action" | "in-progress" | "ready" | "served";
 
 export default function KitchenPage() {
   return (
@@ -132,6 +132,19 @@ function KitchenInner() {
     [orders]
   );
 
+  // Served orders go in their own tab so the master can review them later.
+  const served = useMemo(
+    () =>
+      orders
+        .filter((o) => o.order.status === "served")
+        .sort(
+          (a, b) =>
+            new Date(b.order.served_at ?? b.order.created_at).getTime() -
+            new Date(a.order.served_at ?? a.order.created_at).getTime()
+        ),
+    [orders]
+  );
+
   const visible = useMemo<FullOrder[]>(() => {
     const set =
       filter === "needs-action"
@@ -140,9 +153,11 @@ function KitchenInner() {
         ? cooking
         : filter === "ready"
         ? ready
+        : filter === "served"
+        ? served
         : [...ready, ...cooking, ...queued]; // "All" — surface ready first
     return set;
-  }, [filter, queued, cooking, ready]);
+  }, [filter, queued, cooking, ready, served]);
 
   const recentlyServed = useMemo(
     () =>
@@ -272,6 +287,12 @@ function KitchenInner() {
             count={ready.length}
             active={filter === "ready"}
             onClick={() => setFilter("ready")}
+          />
+          <FilterPill
+            label="Served"
+            count={served.length}
+            active={filter === "served"}
+            onClick={() => setFilter("served")}
           />
         </div>
       </header>
@@ -473,6 +494,9 @@ function OrderCard({
   } else if (order.status === "ready") {
     headerClass = "bg-sapthagiri-burgundy text-white";
     statusLabel = "Ready";
+  } else if (order.status === "served") {
+    headerClass = "bg-green-700 text-white";
+    statusLabel = "Served";
   }
 
   const cookingPct =
@@ -515,6 +539,20 @@ function OrderCard({
                 </div>
                 <div className="text-xl font-bold tabular-nums">
                   {timeSince(order.created_at, now)}
+                </div>
+              </>
+            ) : order.status === "served" ? (
+              <>
+                <div className="text-[10px] uppercase tracking-wider opacity-80">
+                  Served at
+                </div>
+                <div className="text-base font-bold tabular-nums">
+                  {order.served_at
+                    ? new Date(order.served_at).toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : "—"}
                 </div>
               </>
             ) : (
@@ -667,7 +705,12 @@ function OrderCard({
         </div>
       )}
 
-      {/* Big single action button at the bottom */}
+      {/* Action buttons — hidden for served (terminal state) */}
+      {order.status === "served" ? (
+        <div className="px-4 pb-3 pt-1 text-xs text-stone-500 italic">
+          Order complete · archived to the Served tab.
+        </div>
+      ) : (
       <div className="px-3 pb-3 pt-1 flex gap-2 items-center">
         {order.status === "queued" && (
           <button
@@ -704,6 +747,7 @@ function OrderCard({
           ✕
         </button>
       </div>
+      )}
     </div>
   );
 }
