@@ -51,6 +51,12 @@ create table if not exists public.order_items (
   -- Kitchen has crossed this item off the to-do list.
   is_done      boolean not null default false,
   done_at      timestamptz,
+  -- When the dosa master tapped the row to claim "on the pan now" (3-state UI).
+  started_at   timestamptz,
+  -- Per-item texture preference (each dosa/uttapam can differ).
+  crispiness   text not null default 'crispy' check (crispiness in ('soft','crispy')),
+  -- Per-item cooking medium.
+  cook_medium  text not null default 'oil' check (cook_medium in ('ghee','oil')),
   notes        text
 );
 

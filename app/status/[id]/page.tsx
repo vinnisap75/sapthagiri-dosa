@@ -315,18 +315,14 @@ export default function StatusPage() {
         {/* Order details */}
         <div className="card p-4">
           <h3 className="font-semibold mb-2">Your order</h3>
-          <div className="text-sm text-stone-700 flex flex-wrap gap-2 mb-3">
-            <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
-              {order.cook_medium === "ghee" ? "🧈 Amul Ghee" : "🛢️ Oil"}
-            </span>
-          </div>
           <ul className="divide-y divide-stone-200">
             {items.map((i) => (
               <li key={i.id} className="py-2">
                 <div className="font-medium">
                   {i.quantity} × {i.name}{" "}
                   <span className="text-xs text-stone-500 ml-1">
-                    {i.crispiness === "crispy" ? "✨ crispy" : "☁️ soft"}
+                    {i.crispiness === "crispy" ? "✨ crispy" : "☁️ soft"}{" "}
+                    · {i.cook_medium === "ghee" ? "🧈 ghee" : "🛢️ oil"}
                   </span>
                 </div>
                 {i.addons && i.addons.length > 0 && (

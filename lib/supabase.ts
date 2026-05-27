@@ -57,6 +57,10 @@ export interface OrderItemRow {
   no_onion_garlic: boolean;
   /** Per-item texture preference (each dosa/uttapam can differ). */
   crispiness: "soft" | "crispy";
+  /** Per-item cook medium (each dosa/uttapam can differ). */
+  cook_medium: "ghee" | "oil";
+  /** Set when the dosa master taps the row to claim "on the pan now". */
+  started_at: string | null;
   /** Serve the masala (potato) filling on the side instead of inside the dosa. */
   masala_on_side: boolean;
   /** Add-on slugs selected by the customer (from lib/menu.ts ADDONS). */

@@ -166,28 +166,46 @@ function KitchenInner() {
     await sb.from("orders").update(patch).eq("id", order.id);
   }
 
-  /** Toggle a single item's done flag.  If every item in the parent order is
-   *  now done, also bump the order's status to "ready" (UX: kitchen has
-   *  visually crossed off all its work). */
-  async function toggleItemDone(
-    full: FullOrder,
-    item: OrderItemRow,
-    forceDone?: boolean
-  ) {
-    const nextDone = forceDone !== undefined ? forceDone : !item.is_done;
+  /** Cycle an item through three states on each tap:
+   *  pending (no started_at, not done)
+   *    → cooking (started_at set, not done)
+   *      → done (started_at set, is_done true)
+   *        → pending again (reset both)
+   *  When all items hit "done", the order auto-flips to "ready" and we also
+   *  bump the order to "cooking" the moment the first item starts. */
+  async function cycleItemState(full: FullOrder, item: OrderItemRow) {
     const sb = supabase();
-    await sb
-      .from("order_items")
-      .update({
-        is_done: nextDone,
-        done_at: nextDone ? new Date().toISOString() : null,
-      })
-      .eq("id", item.id);
+    const now = new Date().toISOString();
 
-    // If every item is now done AND order is not yet ready/served, mark ready.
-    const allDone =
-      full.items.every((i) => (i.id === item.id ? nextDone : i.is_done)) &&
-      nextDone;
+    let patch: Partial<OrderItemRow>;
+    let nextStartedAt: string | null = item.started_at;
+    let nextIsDone: boolean = item.is_done;
+
+    if (!item.started_at && !item.is_done) {
+      // pending → cooking (on the pan)
+      patch = { started_at: now };
+      nextStartedAt = now;
+      // Auto-bump order to cooking on the first item that starts.
+      if (full.order.status === "queued") {
+        await setStatus(full.order, "cooking");
+      }
+    } else if (item.started_at && !item.is_done) {
+      // cooking → done
+      patch = { is_done: true, done_at: now };
+      nextIsDone = true;
+    } else {
+      // done → reset to pending
+      patch = { started_at: null, is_done: false, done_at: null };
+      nextStartedAt = null;
+      nextIsDone = false;
+    }
+
+    await sb.from("order_items").update(patch).eq("id", item.id);
+
+    // If after this change every item is done, mark order ready.
+    const allDone = full.items.every((i) =>
+      i.id === item.id ? nextIsDone : i.is_done
+    ) && nextIsDone;
     if (
       allDone &&
       full.order.status !== "ready" &&
@@ -316,7 +334,7 @@ function KitchenInner() {
                 now={now}
                 queueAll={active}
                 onSetStatus={setStatus}
-                onToggleItem={(item, forceDone) => toggleItemDone(o, item, forceDone)}
+                onCycleItem={(item) => cycleItemState(o, item)}
               />
             ))}
           </div>
@@ -391,13 +409,13 @@ function OrderCard({
   now,
   queueAll,
   onSetStatus,
-  onToggleItem,
+  onCycleItem,
 }: {
   full: FullOrder;
   now: Date;
   queueAll: FullOrder[];
   onSetStatus: (o: OrderRow, s: OrderRow["status"]) => void;
-  onToggleItem: (item: OrderItemRow, forceDone?: boolean) => void;
+  onCycleItem: (item: OrderItemRow) => void;
 }) {
   const { order, items } = full;
   const doneCount = items.filter((i) => i.is_done).length;
@@ -487,11 +505,10 @@ function OrderCard({
         </div>
       </div>
 
-      {/* Meta row — clock icon, item count, progress, cook prefs, badges */}
+      {/* Meta row — prominent arrival time, item count, badges */}
       <div className="px-4 py-2 border-b border-stone-200 text-sm text-stone-700 flex flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="flex items-center gap-1">
-          <span className="text-stone-400">🕒</span>
-          {new Date(order.created_at).toLocaleTimeString([], {
+        <span className="flex items-center gap-1 font-semibold text-sapthagiri-burgundy tabular-nums">
+          🕒 {new Date(order.created_at).toLocaleTimeString([], {
             hour: "numeric",
             minute: "2-digit",
           })}
@@ -505,9 +522,6 @@ function OrderCard({
             👥 {order.party_size === 8 ? "8+" : order.party_size}
           </span>
         )}
-        <span className="badge bg-amber-50 text-amber-900 border border-amber-200">
-          {order.cook_medium === "ghee" ? "🧈 GHEE" : "🛢️ OIL"}
-        </span>
         {hasUttapam && (
           <span className="badge bg-orange-100 text-orange-800">UTTAPAM</span>
         )}
@@ -518,31 +532,44 @@ function OrderCard({
         )}
       </div>
 
-      {/* To-do list — tap each row to cross it off as cooked */}
+      {/* To-do list — tap each row to cycle:
+          pending → on pan (highlighted) → done (strikethrough) → pending */}
       <ul className="px-2 py-2 flex-1">
-        {items.map((i) => (
+        {items.map((i) => {
+          const state: "pending" | "cooking" | "done" = i.is_done
+            ? "done"
+            : i.started_at
+            ? "cooking"
+            : "pending";
+          return (
           <li key={i.id}>
             <button
               type="button"
-              onClick={() => onToggleItem(i)}
-              className={`w-full flex items-start gap-2 text-left px-2 py-2 rounded-lg hover:bg-stone-50 transition ${
-                i.is_done ? "opacity-60" : ""
+              onClick={() => onCycleItem(i)}
+              className={`w-full flex items-start gap-2 text-left px-2 py-2 rounded-lg transition ${
+                state === "done"
+                  ? "opacity-60"
+                  : state === "cooking"
+                  ? "bg-amber-100 ring-2 ring-amber-300"
+                  : "hover:bg-stone-50"
               }`}
             >
               <span
-                className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center text-xs flex-shrink-0 ${
-                  i.is_done
+                className={`mt-0.5 w-6 h-6 rounded-md border-2 flex items-center justify-center text-sm flex-shrink-0 ${
+                  state === "done"
                     ? "bg-green-600 border-green-600 text-white"
+                    : state === "cooking"
+                    ? "bg-amber-400 border-amber-500 text-white animate-pulse"
                     : "bg-white border-stone-400"
                 }`}
                 aria-hidden
               >
-                {i.is_done ? "✓" : ""}
+                {state === "done" ? "✓" : state === "cooking" ? "🔥" : ""}
               </span>
               <span className="flex-1 min-w-0 text-sm">
                 <span
                   className={`block ${
-                    i.is_done ? "line-through text-stone-500" : ""
+                    state === "done" ? "line-through text-stone-500" : ""
                   }`}
                 >
                   <span className="font-semibold mr-1 tabular-nums">
@@ -557,6 +584,9 @@ function OrderCard({
                     }`}
                   >
                     {i.crispiness === "crispy" ? "✨ CRISPY" : "☁️ SOFT"}
+                  </span>
+                  <span className="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                    {i.cook_medium === "ghee" ? "🧈 GHEE" : "🛢️ OIL"}
                   </span>
                   <span className="ml-2 text-xs text-stone-400 tabular-nums">
                     {i.cook_minutes}m
@@ -591,7 +621,8 @@ function OrderCard({
               </span>
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
       {order.notes && (
