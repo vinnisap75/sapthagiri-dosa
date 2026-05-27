@@ -291,65 +291,27 @@ export default function KitchenPage() {
       )}
 
       <section className="max-w-7xl mx-auto px-6 py-6">
-        {filter === "all" && (
-          <div className="flex items-baseline justify-between mb-3">
-            <h2 className="text-lg font-semibold">
-              Active batch (next {DISPLAY_BATCH}, FIFO)
-            </h2>
-            <span className="text-xs text-stone-500">
-              Older orders show first.
-            </span>
-          </div>
-        )}
-
         {visible.length === 0 ? (
           <div className="card p-8 text-center text-stone-500">
             No orders here yet. 🍃
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {visible
-              .slice(0, filter === "all" ? DISPLAY_BATCH + ready.length : visible.length)
-              .map((o) => (
-                <OrderCard
-                  key={o.order.id}
-                  full={o}
-                  now={now}
-                  queueAll={active}
-                  onSetStatus={setStatus}
-                  onToggleItem={(item, forceDone) => toggleItemDone(o, item, forceDone)}
-                />
-              ))}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* All active orders, oldest first — the dosa master picks them
+                up FIFO but every table is on screen so nothing is hidden. */}
+            {visible.map((o) => (
+              <OrderCard
+                key={o.order.id}
+                full={o}
+                now={now}
+                queueAll={active}
+                onSetStatus={setStatus}
+                onToggleItem={(item, forceDone) => toggleItemDone(o, item, forceDone)}
+              />
+            ))}
           </div>
         )}
       </section>
-
-      {filter === "all" &&
-        active.length > DISPLAY_BATCH && (
-          <section className="max-w-7xl mx-auto px-6 pb-6">
-            <h2 className="text-sm uppercase tracking-wider text-stone-500 mb-2">
-              Up next ({active.length - DISPLAY_BATCH})
-            </h2>
-            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
-              {active.slice(DISPLAY_BATCH).map((o) => (
-                <div
-                  key={o.order.id}
-                  className="card p-3 text-sm flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-semibold">{o.order.table_id}</div>
-                    <div className="text-xs text-stone-500">
-                      {o.items.reduce((a, b) => a + b.quantity, 0)} item(s)
-                    </div>
-                  </div>
-                  <div className="text-xs text-stone-500">
-                    {timeSince(o.order.created_at, now)} ago
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
 
       {recentlyServed.length > 0 && filter === "all" && (
         <section className="max-w-7xl mx-auto px-6 pb-10">

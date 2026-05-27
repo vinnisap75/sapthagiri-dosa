@@ -4,22 +4,46 @@ import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { TABLES } from "@/lib/tables";
 
+/** A stable public URL is *strongly* recommended so QR codes don't change
+ *  every time you re-print the sheet. Set NEXT_PUBLIC_PUBLIC_URL in
+ *  .env.local (and on Vercel) to your final hosted URL, e.g.
+ *  https://sapthagiri-dosa.vercel.app — then it doesn't matter whether you
+ *  open this page on localhost or production, the QR codes encode the same
+ *  hosted URL and never need to be re-printed. */
+const STABLE_PUBLIC_URL = process.env.NEXT_PUBLIC_PUBLIC_URL;
+
 export default function QrSheet() {
   const [origin, setOrigin] = useState<string>("");
-  useEffect(() => setOrigin(window.location.origin), []);
+  useEffect(
+    () => setOrigin(STABLE_PUBLIC_URL || window.location.origin),
+    []
+  );
 
   return (
     <main className="min-h-screen p-6 print:p-2">
-      <div className="no-print max-w-5xl mx-auto mb-6 flex items-center justify-between">
+      <div className="no-print max-w-5xl mx-auto mb-6 flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-display text-sapthagiri-burgundy">
             Table QR Codes
           </h1>
           <p className="text-sm text-stone-600">
             One QR per table. Print this page, cut along the boxes, tape to the
-            tables. Each code points to{" "}
-            <code className="bg-stone-100 px-1">/order?table=…</code>.
+            tables.
           </p>
+          {origin && (
+            <p className="text-xs text-stone-500 mt-1">
+              QRs encode <code className="bg-stone-100 px-1">{origin}/order?table=…</code>
+              {STABLE_PUBLIC_URL ? (
+                <span className="ml-2 inline-block bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                  ✓ stable hosted URL
+                </span>
+              ) : (
+                <span className="ml-2 inline-block bg-amber-100 text-amber-900 px-2 py-0.5 rounded">
+                  ⚠️ using current host — set NEXT_PUBLIC_PUBLIC_URL to make permanent
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <button onClick={() => window.print()} className="btn-primary">
           🖨️ Print
@@ -44,13 +68,10 @@ export default function QrSheet() {
                 Scan to order · {t.seats} seats
               </div>
               {origin ? (
-                <QRCodeSVG value={url} size={140} includeMargin={false} />
+                <QRCodeSVG value={url} size={160} includeMargin={false} />
               ) : (
-                <div className="w-[140px] h-[140px] bg-stone-100 animate-pulse rounded" />
+                <div className="w-[160px] h-[160px] bg-stone-100 animate-pulse rounded" />
               )}
-              <div className="text-[9px] text-stone-400 mt-2 break-all">
-                {url}
-              </div>
             </div>
           );
         })}

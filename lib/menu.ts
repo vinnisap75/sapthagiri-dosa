@@ -34,7 +34,7 @@ export interface AddonDef {
 /** Full canonical list. Uttapam-only toppings exclude mysore chutney, cheese,
  *  and aloo masala per the kitchen — they don't pair with the thicker batter. */
 export const ADDONS: AddonDef[] = [
-  { id: "paneer",         label: "Paneer",         availableFor: ["dosa", "uttapam"], extraMinutes: 0.5, extraPrice: 2.00 },
+  { id: "paneer",         label: "Paneer",         availableFor: ["dosa"],            extraMinutes: 0.5, extraPrice: 2.00 },
   { id: "onion",          label: "Onion",          availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.50 },
   { id: "aloo-masala",    label: "Masala (Aloo)",  availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 1.00 },
   { id: "mysore-chutney", label: "Mysore chutney", availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 1.50 },
@@ -42,7 +42,7 @@ export const ADDONS: AddonDef[] = [
   { id: "tomato",         label: "Tomato",         availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.50 },
   { id: "cheese",         label: "Cheese",         availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 1.50 },
   { id: "cilantro",       label: "Cilantro",       availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.25 },
-  { id: "podi",           label: "Podi",           availableFor: ["dosa", "uttapam"], extraMinutes: 0,   extraPrice: 0.50 },
+  { id: "podi",           label: "Podi",           availableFor: ["dosa"],            extraMinutes: 0,   extraPrice: 0.50 },
 ];
 
 export const ADDONS_BY_ID: Record<string, AddonDef> = Object.fromEntries(

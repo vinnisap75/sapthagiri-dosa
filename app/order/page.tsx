@@ -500,7 +500,7 @@ function FixedItemRow({
           </button>
         </div>
       </div>
-      {line && line.qty > 0 && item.category === "dosa" && (
+      {line && line.qty > 0 && item.hasMasalaFilling && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
             type="checkbox"
@@ -627,17 +627,9 @@ function BuildYourOwn({
                 })}
               </div>
 
-              {base.category === "dosa" && (
-                <label className="mt-2 flex items-center gap-2 text-xs bg-white border border-stone-200 rounded px-2 py-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={line.masalaOnSide}
-                    onChange={() => onToggleFlag(line.lineId, "masalaOnSide")}
-                    className="accent-sapthagiri-burgundy"
-                  />
-                  <span>Masala on the side</span>
-                </label>
-              )}
+              {/* Masala-on-side only makes sense for items that have a
+                  built-in masala filling, so it's not shown on Build Your
+                  Own — customers compose their own toppings here. */}
             </div>
           ))}
         </div>
