@@ -76,6 +76,7 @@ function OrderInner() {
           noOnionGarlic: false,
           masalaOnSide: false,
           crispiness: "crispy",
+          cookMedium: "oil",
           addons: [],
         },
       ];
@@ -503,6 +504,7 @@ function FixedItemRow({
   onBump,
   onToggleFlag,
   onSetCrispiness,
+  onSetCookMedium,
 }: {
   item: MenuItem;
   line?: Line;
@@ -614,6 +616,7 @@ function BuildYourOwn({
   onToggleAddon,
   onToggleFlag,
   onSetCrispiness,
+  onSetCookMedium,
 }: {
   base: MenuItem;
   lines: Line[];
