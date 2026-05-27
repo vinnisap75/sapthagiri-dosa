@@ -176,13 +176,15 @@ function OrderInner() {
         .single();
       if (insErr || !orderRow) throw insErr ?? new Error("Failed to create order");
 
-      const itemRows = lines.map((l) => {
+      // Each physical dosa gets its own row so the kitchen can check them
+      // off independently. qty=3 → 3 rows of quantity=1.
+      const itemRows = lines.flatMap((l) => {
         const m = MENU.find((x) => x.id === l.itemId)!;
-        return {
+        const base = {
           order_id: orderRow.id,
           menu_item_id: m.id,
           name: m.name,
-          quantity: l.qty,
+          quantity: 1,
           unit_price_cents: Math.round(m.price * 100),
           cook_minutes: m.cookMinutes,
           category: m.category,
@@ -192,6 +194,7 @@ function OrderInner() {
           cook_medium: l.cookMedium,
           addons: m.isCustomizable ? l.addons : [],
         };
+        return Array.from({ length: l.qty }, () => ({ ...base }));
       });
 
       const { error: itemsErr } = await sb.from("order_items").insert(itemRows);
