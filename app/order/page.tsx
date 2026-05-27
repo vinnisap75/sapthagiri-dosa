@@ -30,6 +30,7 @@ function OrderInner() {
   const [lines, setLines] = useState<Line[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
+  const [partySize, setPartySize] = useState<number | null>(null);
   const [cookMedium, setCookMedium] = useState<"oil" | "ghee">("oil");
   const [crispiness, setCrispiness] = useState<"crispy" | "soft">("crispy");
   const [showPreview, setShowPreview] = useState(false);
@@ -158,6 +159,7 @@ function OrderInner() {
           total_cents: totalCents,
           cook_medium: cookMedium,
           crispiness: crispiness,
+          party_size: partySize,
         })
         .select()
         .single();
@@ -236,6 +238,26 @@ function OrderInner() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
+        {/* Party size — helps the server know who to expect at the table */}
+        <section className="card p-4">
+          <h2 className="font-display text-lg text-sapthagiri-burgundy mb-1">
+            How many people at your table?
+          </h2>
+          <p className="text-xs text-stone-500 mb-3">
+            So the server knows how many to look after.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+              <PillToggle
+                key={n}
+                label={n === 8 ? "8+" : String(n)}
+                active={partySize === n}
+                onClick={() => setPartySize(n)}
+              />
+            ))}
+          </div>
+        </section>
+
         {/* Cook preferences — applied to every dosa in the order */}
         <section className="card p-4">
           <h2 className="font-display text-lg text-sapthagiri-burgundy mb-1">
@@ -397,6 +419,7 @@ function OrderInner() {
           notes={notes}
           cookMedium={cookMedium}
           crispiness={crispiness}
+          partySize={partySize}
           tableId={tableId}
           onEdit={() => setShowPreview(false)}
           onConfirm={submit}
@@ -646,6 +669,7 @@ function PreviewModal({
   notes,
   cookMedium,
   crispiness,
+  partySize,
   tableId,
   onEdit,
   onConfirm,
@@ -656,6 +680,7 @@ function PreviewModal({
   notes: string;
   cookMedium: "ghee" | "oil";
   crispiness: "soft" | "crispy";
+  partySize: number | null;
   tableId: string;
   onEdit: () => void;
   onConfirm: () => void;
@@ -675,6 +700,12 @@ function PreviewModal({
 
         <div className="px-5 py-4 space-y-4">
           <div className="text-sm text-stone-700 flex flex-wrap gap-2">
+            {partySize && (
+              <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
+                👥 {partySize === 8 ? "8+" : partySize}{" "}
+                {partySize === 1 ? "person" : "people"}
+              </span>
+            )}
             <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
               {cookMedium === "ghee" ? "🧈 Amul Ghee" : "🛢️ Oil"}
             </span>

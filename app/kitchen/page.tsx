@@ -490,6 +490,11 @@ function OrderCard({
           <span className="text-stone-400">✓</span>
           {doneCount}/{items.length} done
         </span>
+        {order.party_size && (
+          <span className="badge bg-stone-100 text-stone-800 border border-stone-300">
+            👥 {order.party_size === 8 ? "8+" : order.party_size}
+          </span>
+        )}
         <span className="badge bg-amber-50 text-amber-900 border border-amber-200">
           {order.cook_medium === "ghee" ? "🧈 GHEE" : "🛢️ OIL"}
         </span>

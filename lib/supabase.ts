@@ -37,6 +37,8 @@ export interface OrderRow {
   cook_medium: "ghee" | "oil";
   /** Texture preference for the dosa. */
   crispiness: "soft" | "crispy";
+  /** How many people are at the table — helps the server know how many to seat / send service for. */
+  party_size: number | null;
   /** 1–5 stars set by the customer once the order is served. */
   rating: number | null;
   rating_at: string | null;

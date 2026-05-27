@@ -23,6 +23,8 @@ create table if not exists public.orders (
   -- Texture preference: soft (less browned) or crispy (default).
   crispiness          text not null default 'crispy'
                         check (crispiness in ('soft','crispy')),
+  -- Party size: how many people at the table (helps the server).
+  party_size          int check (party_size between 1 and 20),
   -- One-shot 1–5 rating + optional note submitted after the order is served.
   rating              int check (rating between 1 and 5),
   rating_at           timestamptz,
