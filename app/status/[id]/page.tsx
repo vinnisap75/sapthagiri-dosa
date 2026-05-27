@@ -213,27 +213,18 @@ export default function StatusPage() {
           <h3 className="font-semibold mb-2">Your order</h3>
           <ul className="divide-y divide-stone-200">
             {items.map((i) => (
-              <li key={i.id} className="py-2 flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium">
-                    {i.quantity} × {i.name}
+              <li key={i.id} className="py-2">
+                <div className="font-medium">
+                  {i.quantity} × {i.name}
+                </div>
+                {i.no_onion_garlic && (
+                  <div className="text-xs text-amber-800 mt-0.5">
+                    🚫 No onion, no garlic (Jain masala)
                   </div>
-                  {i.no_onion_garlic && (
-                    <div className="text-xs text-amber-800 mt-0.5">
-                      🚫 No onion, no garlic (Jain masala)
-                    </div>
-                  )}
-                </div>
-                <div className="text-sm text-stone-700 whitespace-nowrap">
-                  ${((i.unit_price_cents * i.quantity) / 100).toFixed(2)}
-                </div>
+                )}
               </li>
             ))}
           </ul>
-          <div className="flex justify-between font-semibold pt-2 mt-2 border-t border-stone-200">
-            <span>Total</span>
-            <span>${(order.total_cents / 100).toFixed(2)}</span>
-          </div>
           {order.notes && (
             <p className="text-xs text-stone-500 mt-3">
               Notes: <em>{order.notes}</em>

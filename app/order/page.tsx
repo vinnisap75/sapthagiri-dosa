@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MENU, MenuItem } from "@/lib/menu";
 import { isValidTable } from "@/lib/tables";
@@ -25,12 +25,7 @@ function OrderInner() {
   const [error, setError] = useState<string | null>(null);
 
   const cartLines = Object.values(lines).filter((l) => l.qty > 0);
-  const total = useMemo(() => {
-    return cartLines.reduce((sum, l) => {
-      const m = MENU.find((x) => x.id === l.itemId);
-      return sum + (m ? m.price * l.qty : 0);
-    }, 0);
-  }, [cartLines]);
+  const totalItems = cartLines.reduce((a, b) => a + b.qty, 0);
 
   function bump(item: MenuItem, delta: number) {
     setLines((prev) => {
@@ -64,7 +59,12 @@ function OrderInner() {
     setSubmitting(true);
     try {
       const sb = supabase();
-      const totalCents = Math.round(total * 100);
+      // Keep the price record in the DB for reporting, but never show it to
+      // the customer.  Computed silently from menu data.
+      const totalCents = cartLines.reduce((sum, l) => {
+        const m = MENU.find((x) => x.id === l.itemId);
+        return sum + (m ? Math.round(m.price * 100) * l.qty : 0);
+      }, 0);
       const { data: orderRow, error: insErr } = await sb
         .from("orders")
         .insert({
@@ -138,8 +138,8 @@ function OrderInner() {
             <h1 className="text-xl font-display">Order — Table {tableId}</h1>
           </div>
           <div className="text-right text-xs">
-            <div className="text-sapthagiri-gold uppercase tracking-wider">Total</div>
-            <div className="text-lg font-semibold">${total.toFixed(2)}</div>
+            <div className="text-sapthagiri-gold uppercase tracking-wider">Items</div>
+            <div className="text-lg font-semibold tabular-nums">{totalItems}</div>
           </div>
         </div>
       </header>
@@ -198,12 +198,14 @@ function OrderInner() {
       <div className="fixed bottom-0 inset-x-0 bg-white border-t border-stone-200 shadow-lg">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="flex-1">
-            <div className="text-xs text-stone-500">
-              {cartLines.length === 0
-                ? "Add items to begin"
-                : `${cartLines.reduce((a, b) => a + b.qty, 0)} item(s)`}
+            <div className="text-xs uppercase tracking-wider text-stone-500">
+              Your basket
             </div>
-            <div className="font-semibold text-lg">${total.toFixed(2)}</div>
+            <div className="font-semibold text-lg tabular-nums">
+              {totalItems === 0
+                ? "No items yet"
+                : `${totalItems} item${totalItems === 1 ? "" : "s"}`}
+            </div>
           </div>
           <button
             onClick={submit}
@@ -264,7 +266,6 @@ function ItemRow({
             )}
           </div>
           <p className="text-xs text-stone-500 mt-0.5">{item.description}</p>
-          <p className="text-sm text-stone-700 mt-1">${item.price.toFixed(2)}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
