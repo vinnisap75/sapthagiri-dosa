@@ -293,25 +293,44 @@ function KitchenInner() {
                 Server requested
               </div>
               <div className="flex flex-wrap gap-2 mt-1">
-                {serverCalls.map((c) => (
-                  <div
-                    key={c.id}
-                    className="bg-white border border-amber-300 rounded-lg px-3 py-1.5 text-sm flex items-center gap-2"
-                  >
-                    <span className="font-display font-bold text-sapthagiri-burgundy">
-                      {c.table_id}
-                    </span>
-                    <span className="text-xs text-stone-500">
-                      · {timeSince(c.created_at, now)} ago
-                    </span>
-                    <button
-                      onClick={() => resolveServerCall(c.id)}
-                      className="ml-1 text-xs font-semibold text-green-700 hover:text-green-900"
+                {serverCalls.map((c) => {
+                  const isRava = c.reason && /rava/i.test(c.reason);
+                  return (
+                    <div
+                      key={c.id}
+                      className={`bg-white rounded-lg px-3 py-1.5 text-sm flex items-center gap-2 ${
+                        isRava
+                          ? "border-2 border-sapthagiri-gold"
+                          : "border border-amber-300"
+                      }`}
                     >
-                      ✓ done
-                    </button>
-                  </div>
-                ))}
+                      <span className="font-display font-bold text-sapthagiri-burgundy">
+                        {c.table_id}
+                      </span>
+                      {c.reason && (
+                        <span
+                          className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                            isRava
+                              ? "bg-sapthagiri-burgundy text-white"
+                              : "bg-stone-100 text-stone-700"
+                          }`}
+                        >
+                          {isRava ? "🌾 " : ""}
+                          {c.reason}
+                        </span>
+                      )}
+                      <span className="text-xs text-stone-500">
+                        · {timeSince(c.created_at, now)} ago
+                      </span>
+                      <button
+                        onClick={() => resolveServerCall(c.id)}
+                        className="ml-1 text-xs font-semibold text-green-700 hover:text-green-900"
+                      >
+                        ✓ done
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

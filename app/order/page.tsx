@@ -251,6 +251,37 @@ function OrderInner() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
+        {/* Rava Dosa — not on the digital menu, customer summons a server */}
+        <section className="rounded-xl border-2 border-sapthagiri-gold bg-sapthagiri-cream p-4">
+          <div className="flex items-start gap-3">
+            <div className="text-3xl">🌾</div>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-display text-lg text-sapthagiri-burgundy">
+                Want a Rava Dosa?
+              </h2>
+              <p className="text-xs text-stone-600 mt-0.5">
+                Rava dosas are made fresh by a server. Tap below and someone
+                will come by to take your order.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => callServer("Rava Dosa")}
+            disabled={callingServer || serverCalled}
+            className={`mt-3 w-full rounded-lg font-semibold py-3 transition ${
+              serverCalled
+                ? "bg-green-100 border border-green-300 text-green-800"
+                : "bg-sapthagiri-burgundy text-white hover:bg-[#561624]"
+            }`}
+          >
+            {serverCalled
+              ? "✓ Server notified — they're on their way"
+              : callingServer
+              ? "Calling…"
+              : "🛎️ Call server for Rava Dosa"}
+          </button>
+        </section>
+
         {/* Party size — helps the server know who to expect at the table */}
         <section className="card p-4">
           <h2 className="font-display text-lg text-sapthagiri-burgundy mb-1">
