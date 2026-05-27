@@ -319,15 +319,15 @@ export default function StatusPage() {
             <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
               {order.cook_medium === "ghee" ? "🧈 Amul Ghee" : "🛢️ Oil"}
             </span>
-            <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
-              {order.crispiness === "crispy" ? "✨ Crispy" : "☁️ Soft"}
-            </span>
           </div>
           <ul className="divide-y divide-stone-200">
             {items.map((i) => (
               <li key={i.id} className="py-2">
                 <div className="font-medium">
-                  {i.quantity} × {i.name}
+                  {i.quantity} × {i.name}{" "}
+                  <span className="text-xs text-stone-500 ml-1">
+                    {i.crispiness === "crispy" ? "✨ crispy" : "☁️ soft"}
+                  </span>
                 </div>
                 {i.addons && i.addons.length > 0 && (
                   <div className="text-xs text-stone-700 mt-1 flex flex-wrap gap-1">

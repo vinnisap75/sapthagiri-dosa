@@ -14,6 +14,7 @@ interface Line {
   qty: number;
   noOnionGarlic: boolean;
   masalaOnSide: boolean;
+  crispiness: "crispy" | "soft";
   addons: string[];
 }
 
@@ -32,7 +33,6 @@ function OrderInner() {
   const [notes, setNotes] = useState("");
   const [partySize, setPartySize] = useState<number | null>(null);
   const [cookMedium, setCookMedium] = useState<"oil" | "ghee">("oil");
-  const [crispiness, setCrispiness] = useState<"crispy" | "soft">("crispy");
   const [showPreview, setShowPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +54,7 @@ function OrderInner() {
             qty: 1,
             noOnionGarlic: false,
             masalaOnSide: false,
+            crispiness: "crispy",
             addons: [],
           },
         ];
@@ -73,6 +74,7 @@ function OrderInner() {
           qty: 1,
           noOnionGarlic: false,
           masalaOnSide: false,
+          crispiness: "crispy",
           addons: [],
         },
       ];
@@ -92,6 +94,11 @@ function OrderInner() {
   function toggleFlag(lineId: string, key: "noOnionGarlic" | "masalaOnSide") {
     setLines((prev) =>
       prev.map((l) => (l.lineId === lineId ? { ...l, [key]: !l[key] } : l))
+    );
+  }
+  function setLineCrispiness(lineId: string, value: "crispy" | "soft") {
+    setLines((prev) =>
+      prev.map((l) => (l.lineId === lineId ? { ...l, crispiness: value } : l))
     );
   }
   function toggleAddon(lineId: string, addonId: string) {
@@ -158,7 +165,6 @@ function OrderInner() {
           status: "queued",
           total_cents: totalCents,
           cook_medium: cookMedium,
-          crispiness: crispiness,
           party_size: partySize,
         })
         .select()
@@ -177,6 +183,7 @@ function OrderInner() {
           category: m.category,
           no_onion_garlic: l.noOnionGarlic && !!m.hasMasalaFilling,
           masala_on_side: l.masalaOnSide && m.category === "dosa",
+          crispiness: l.crispiness,
           addons: m.isCustomizable ? l.addons : [],
         };
       });
@@ -258,15 +265,17 @@ function OrderInner() {
           </div>
         </section>
 
-        {/* Cook preferences — applied to every dosa in the order */}
+        {/* Cooking medium for the whole order (ghee vs oil). Texture
+            (crispy/soft) is picked per item below, since people often want
+            mixed orders. */}
         <section className="card p-4">
           <h2 className="font-display text-lg text-sapthagiri-burgundy mb-1">
-            How would you like it cooked?
+            Cook with…
           </h2>
           <p className="text-xs text-stone-500 mb-3">
-            Applies to every dosa in this order.
+            Applies to every dosa in this order. Texture (crispy / soft) is set per item.
           </p>
-          <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="grid grid-cols-2 gap-2">
             <PillToggle
               label="🧈 Amul Ghee"
               active={cookMedium === "ghee"}
@@ -276,18 +285,6 @@ function OrderInner() {
               label="🛢️ Oil"
               active={cookMedium === "oil"}
               onClick={() => setCookMedium("oil")}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <PillToggle
-              label="✨ Crispy"
-              active={crispiness === "crispy"}
-              onClick={() => setCrispiness("crispy")}
-            />
-            <PillToggle
-              label="☁️ Soft"
-              active={crispiness === "soft"}
-              onClick={() => setCrispiness("soft")}
             />
           </div>
         </section>
@@ -305,6 +302,7 @@ function OrderInner() {
             onDelete={deleteLine}
             onToggleAddon={toggleAddon}
             onToggleFlag={toggleFlag}
+            onSetCrispiness={setLineCrispiness}
           />
           <BuildYourOwn
             base={customUttapam}
@@ -314,6 +312,7 @@ function OrderInner() {
             onDelete={deleteLine}
             onToggleAddon={toggleAddon}
             onToggleFlag={toggleFlag}
+            onSetCrispiness={setLineCrispiness}
           />
         </Section>
 
@@ -326,6 +325,7 @@ function OrderInner() {
               onAdd={() => addOne(m)}
               onBump={bumpLine}
               onToggleFlag={toggleFlag}
+              onSetCrispiness={setLineCrispiness}
             />
           ))}
         </Section>
@@ -339,6 +339,7 @@ function OrderInner() {
               onAdd={() => addOne(m)}
               onBump={bumpLine}
               onToggleFlag={toggleFlag}
+              onSetCrispiness={setLineCrispiness}
             />
           ))}
         </Section>
@@ -418,7 +419,6 @@ function OrderInner() {
           customerName={customerName}
           notes={notes}
           cookMedium={cookMedium}
-          crispiness={crispiness}
           partySize={partySize}
           tableId={tableId}
           onEdit={() => setShowPreview(false)}
@@ -482,12 +482,14 @@ function FixedItemRow({
   onAdd,
   onBump,
   onToggleFlag,
+  onSetCrispiness,
 }: {
   item: MenuItem;
   line?: Line;
   onAdd: () => void;
   onBump: (lineId: string, delta: number) => void;
   onToggleFlag: (lineId: string, key: "noOnionGarlic" | "masalaOnSide") => void;
+  onSetCrispiness: (lineId: string, value: "crispy" | "soft") => void;
 }) {
   const qty = line?.qty ?? 0;
   return (
@@ -523,6 +525,20 @@ function FixedItemRow({
           </button>
         </div>
       </div>
+      {line && line.qty > 0 && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <PillToggle
+            label="✨ Crispy"
+            active={line.crispiness === "crispy"}
+            onClick={() => onSetCrispiness(line.lineId, "crispy")}
+          />
+          <PillToggle
+            label="☁️ Soft"
+            active={line.crispiness === "soft"}
+            onClick={() => onSetCrispiness(line.lineId, "soft")}
+          />
+        </div>
+      )}
       {line && line.qty > 0 && item.hasMasalaFilling && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
@@ -562,6 +578,7 @@ function BuildYourOwn({
   onDelete,
   onToggleAddon,
   onToggleFlag,
+  onSetCrispiness,
 }: {
   base: MenuItem;
   lines: Line[];
@@ -570,6 +587,7 @@ function BuildYourOwn({
   onDelete: (lineId: string) => void;
   onToggleAddon: (lineId: string, addonId: string) => void;
   onToggleFlag: (lineId: string, key: "noOnionGarlic" | "masalaOnSide") => void;
+  onSetCrispiness: (lineId: string, value: "crispy" | "soft") => void;
 }) {
   const addons = addonsForCategory(base.category);
   return (
@@ -650,6 +668,19 @@ function BuildYourOwn({
                 })}
               </div>
 
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <PillToggle
+                  label="✨ Crispy"
+                  active={line.crispiness === "crispy"}
+                  onClick={() => onSetCrispiness(line.lineId, "crispy")}
+                />
+                <PillToggle
+                  label="☁️ Soft"
+                  active={line.crispiness === "soft"}
+                  onClick={() => onSetCrispiness(line.lineId, "soft")}
+                />
+              </div>
+
               {/* Masala-on-side only makes sense for items that have a
                   built-in masala filling, so it's not shown on Build Your
                   Own — customers compose their own toppings here. */}
@@ -668,7 +699,6 @@ function PreviewModal({
   customerName,
   notes,
   cookMedium,
-  crispiness,
   partySize,
   tableId,
   onEdit,
@@ -679,7 +709,6 @@ function PreviewModal({
   customerName: string;
   notes: string;
   cookMedium: "ghee" | "oil";
-  crispiness: "soft" | "crispy";
   partySize: number | null;
   tableId: string;
   onEdit: () => void;
@@ -709,9 +738,6 @@ function PreviewModal({
             <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
               {cookMedium === "ghee" ? "🧈 Amul Ghee" : "🛢️ Oil"}
             </span>
-            <span className="inline-flex items-center gap-1 bg-stone-100 rounded-full px-3 py-1">
-              {crispiness === "crispy" ? "✨ Crispy" : "☁️ Soft"}
-            </span>
           </div>
 
           <ul className="divide-y divide-stone-200">
@@ -721,7 +747,10 @@ function PreviewModal({
                 <li key={l.lineId} className="py-3">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="font-medium">
-                      {l.qty} × {m.name}
+                      {l.qty} × {m.name}{" "}
+                      <span className="text-xs text-stone-500 ml-1">
+                        {l.crispiness === "crispy" ? "✨ crispy" : "☁️ soft"}
+                      </span>
                     </span>
                     {l.noOnionGarlic && (
                       <span className="badge bg-amber-100 text-amber-900">

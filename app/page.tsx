@@ -3,8 +3,17 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { TABLES } from "@/lib/tables";
+import { AuthGuard, SignOutButton } from "./_components/AuthGuard";
 
-export default function Landing() {
+export default function LandingPage() {
+  return (
+    <AuthGuard>
+      <Landing />
+    </AuthGuard>
+  );
+}
+
+function Landing() {
   const [origin, setOrigin] = useState<string>("");
 
   useEffect(() => {
@@ -14,7 +23,7 @@ export default function Landing() {
   return (
     <main className="min-h-screen">
       <header className="bg-sapthagiri-burgundy text-white">
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-3xl">🪔</span>
             <div>
@@ -24,6 +33,7 @@ export default function Landing() {
               </p>
             </div>
           </div>
+          <SignOutButton className="text-xs uppercase tracking-wider text-sapthagiri-gold hover:text-white" />
         </div>
       </header>
 

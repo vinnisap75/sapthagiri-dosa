@@ -55,6 +55,8 @@ export interface OrderItemRow {
   cook_minutes: number;
   category: "dosa" | "uttapam";
   no_onion_garlic: boolean;
+  /** Per-item texture preference (each dosa/uttapam can differ). */
+  crispiness: "soft" | "crispy";
   /** Serve the masala (potato) filling on the side instead of inside the dosa. */
   masala_on_side: boolean;
   /** Add-on slugs selected by the customer (from lib/menu.ts ADDONS). */

@@ -9,6 +9,7 @@ import {
   remainingMinutes,
   OrderLite,
 } from "@/lib/timing";
+import { AuthGuard, SignOutButton } from "../_components/AuthGuard";
 
 interface FullOrder {
   order: OrderRow;
@@ -18,6 +19,14 @@ interface FullOrder {
 type Filter = "all" | "needs-action" | "in-progress" | "ready";
 
 export default function KitchenPage() {
+  return (
+    <AuthGuard>
+      <KitchenInner />
+    </AuthGuard>
+  );
+}
+
+function KitchenInner() {
   const [orders, setOrders] = useState<FullOrder[]>([]);
   const [serverCalls, setServerCalls] = useState<ServerCallRow[]>([]);
   const [now, setNow] = useState<Date>(new Date());
@@ -216,6 +225,7 @@ export default function KitchenPage() {
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </div>
+            <SignOutButton className="text-xs uppercase tracking-wider text-sapthagiri-gold hover:text-white" />
           </div>
         </div>
 
@@ -498,9 +508,6 @@ function OrderCard({
         <span className="badge bg-amber-50 text-amber-900 border border-amber-200">
           {order.cook_medium === "ghee" ? "🧈 GHEE" : "🛢️ OIL"}
         </span>
-        <span className="badge bg-blue-50 text-blue-900 border border-blue-200">
-          {order.crispiness === "crispy" ? "✨ CRISPY" : "☁️ SOFT"}
-        </span>
         {hasUttapam && (
           <span className="badge bg-orange-100 text-orange-800">UTTAPAM</span>
         )}
@@ -542,6 +549,15 @@ function OrderCard({
                     {i.quantity}×
                   </span>
                   {i.name}
+                  <span
+                    className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      i.crispiness === "crispy"
+                        ? "bg-blue-100 text-blue-900"
+                        : "bg-stone-100 text-stone-700"
+                    }`}
+                  >
+                    {i.crispiness === "crispy" ? "✨ CRISPY" : "☁️ SOFT"}
+                  </span>
                   <span className="ml-2 text-xs text-stone-400 tabular-nums">
                     {i.cook_minutes}m
                   </span>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { TABLES } from "@/lib/tables";
+import { AuthGuard } from "../../_components/AuthGuard";
 
 /** A stable public URL is *strongly* recommended so QR codes don't change
  *  every time you re-print the sheet. Set NEXT_PUBLIC_PUBLIC_URL in
@@ -12,7 +13,15 @@ import { TABLES } from "@/lib/tables";
  *  hosted URL and never need to be re-printed. */
 const STABLE_PUBLIC_URL = process.env.NEXT_PUBLIC_PUBLIC_URL;
 
-export default function QrSheet() {
+export default function QrSheetPage() {
+  return (
+    <AuthGuard>
+      <QrSheet />
+    </AuthGuard>
+  );
+}
+
+function QrSheet() {
   const [origin, setOrigin] = useState<string>("");
   useEffect(
     () => setOrigin(STABLE_PUBLIC_URL || window.location.origin),
