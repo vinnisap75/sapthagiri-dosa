@@ -274,35 +274,157 @@ function Stats() {
             )}
           </section>
 
-          {/* Per-hour distribution */}
+          {/* Time-based: service-flow metrics */}
           <section className="card p-5">
             <h2 className="font-display text-lg text-sapthagiri-burgundy mb-3">
-              Orders by hour
+              Service flow timing
             </h2>
-            <div className="flex items-end gap-1.5 h-32">
-              {stats.hourly.map((b) => {
-                const max = Math.max(1, ...stats.hourly.map((x) => x.count));
-                const h = (b.count / max) * 100;
-                return (
-                  <div key={b.hour} className="flex-1 flex flex-col items-center">
-                    <div className="text-[10px] text-stone-500 tabular-nums">
-                      {b.count > 0 ? b.count : ""}
-                    </div>
-                    <div
-                      className="w-full bg-sapthagiri-burgundy rounded-t"
-                      style={{ height: `${h}%`, minHeight: b.count > 0 ? 2 : 0 }}
-                    />
-                    <div className="text-[10px] text-stone-400 mt-1 tabular-nums">
-                      {String(b.hour).padStart(2, "0")}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <TimeStat
+                label="First order"
+                value={
+                  stats.firstOrderAt
+                    ? stats.firstOrderAt.toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : "—"
+                }
+              />
+              <TimeStat
+                label="Latest order"
+                value={
+                  stats.lastOrderAt
+                    ? stats.lastOrderAt.toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : "—"
+                }
+              />
+              <TimeStat
+                label="Service duration"
+                value={
+                  stats.serviceDurationMin
+                    ? `${Math.floor(stats.serviceDurationMin / 60)}h ${stats.serviceDurationMin % 60}m`
+                    : "—"
+                }
+              />
+              <TimeStat
+                label="Orders / hour"
+                value={stats.ordersPerHour ? stats.ordersPerHour.toFixed(1) : "—"}
+              />
             </div>
-            <p className="text-xs text-stone-500 mt-2">
-              Hour of day (24h). Bar height = order count.
-            </p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <TimeStat
+                label="Avg queue wait"
+                value={fmtSec(stats.avgQueueWaitSec)}
+                sub="placed → started cooking"
+              />
+              <TimeStat
+                label="Avg cook time"
+                value={fmtSec(stats.avgCookSec)}
+                sub="cooking → ready"
+              />
+              <TimeStat
+                label="Avg total time"
+                value={fmtSec(stats.avgTotalSec)}
+                sub="placed → served"
+              />
+              <TimeStat
+                label="Median cook"
+                value={fmtSec(stats.medianCookSec)}
+              />
+              <TimeStat
+                label="Fastest cook"
+                value={fmtSec(stats.minCookSec)}
+              />
+              <TimeStat
+                label="Slowest cook"
+                value={fmtSec(stats.maxCookSec)}
+              />
+            </div>
+            {stats.peakBucket && stats.peakBucket.count > 0 && (
+              <div className="mt-4 bg-sapthagiri-cream border border-sapthagiri-gold/40 rounded-lg px-3 py-2 text-sm">
+                <strong>🔥 Peak window:</strong> {stats.peakBucket.label} —{" "}
+                <strong>{stats.peakBucket.count}</strong> order
+                {stats.peakBucket.count === 1 ? "" : "s"} in 15 minutes
+              </div>
+            )}
           </section>
+
+          {/* Per-15-min distribution */}
+          <section className="card p-5">
+            <h2 className="font-display text-lg text-sapthagiri-burgundy mb-3">
+              Orders by 15-minute window
+            </h2>
+            {stats.buckets15.length === 0 ? (
+              <p className="text-sm text-stone-500">No orders yet tonight.</p>
+            ) : (
+              <>
+                <div className="flex items-end gap-1 h-40 overflow-x-auto">
+                  {stats.buckets15.map((b) => {
+                    const max = Math.max(
+                      1,
+                      ...stats.buckets15.map((x) => x.count)
+                    );
+                    const h = (b.count / max) * 100;
+                    const isPeak =
+                      stats.peakBucket?.minutes === b.minutes && b.count > 0;
+                    return (
+                      <div
+                        key={b.minutes}
+                        className="flex flex-col items-center justify-end min-w-[36px]"
+                      >
+                        <div className="text-[10px] text-stone-600 tabular-nums">
+                          {b.count > 0 ? b.count : ""}
+                        </div>
+                        <div
+                          className={`w-7 rounded-t ${
+                            isPeak ? "bg-sapthagiri-gold" : "bg-sapthagiri-burgundy"
+                          }`}
+                          style={{
+                            height: `${h}%`,
+                            minHeight: b.count > 0 ? 3 : 0,
+                          }}
+                        />
+                        <div className="text-[9px] text-stone-400 mt-1 tabular-nums whitespace-nowrap">
+                          {b.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-stone-500 mt-2">
+                  Bar height = orders placed in that 15-min window. Gold bar = peak.
+                </p>
+              </>
+            )}
+          </section>
+
+          {/* Server-call response timing */}
+          {stats.totalServerCalls > 0 && (
+            <section className="card p-5">
+              <h2 className="font-display text-lg text-sapthagiri-burgundy mb-3">
+                Server calls — response time
+              </h2>
+              <div className="grid grid-cols-3 gap-3">
+                <TimeStat
+                  label="Total calls"
+                  value={String(stats.totalServerCalls)}
+                />
+                <TimeStat
+                  label="Still unresolved"
+                  value={String(stats.unresolvedServerCalls)}
+                />
+                <TimeStat
+                  label="Avg response"
+                  value={fmtSec(stats.avgServerCallResponseSec)}
+                  sub="created → resolved"
+                />
+              </div>
+            </section>
+          )}
 
           {/* Per-table */}
           <section className="card p-5">
@@ -415,6 +537,35 @@ function PrefBox({ label, n, total }: { label: string; n: number; total: number 
   );
 }
 
+function TimeStat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="bg-sapthagiri-cream rounded-lg px-3 py-2">
+      <div className="text-xs uppercase tracking-wider text-stone-500">{label}</div>
+      <div className="text-xl font-display tabular-nums text-sapthagiri-burgundy">
+        {value}
+      </div>
+      {sub && <div className="text-[10px] text-stone-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/** Format a duration-in-seconds as human-friendly: e.g. 8s, 1m 30s, 12m. */
+function fmtSec(s: number | null | undefined): string {
+  if (s == null || !isFinite(s)) return "—";
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  const r = Math.round(s - m * 60);
+  return r > 0 ? `${m}m ${r}s` : `${m}m`;
+}
+
 function FlagRow({ label, n, total }: { label: string; n: number; total: number }) {
   const pct = total ? Math.round((n / total) * 100) : 0;
   return (
@@ -428,6 +579,13 @@ function FlagRow({ label, n, total }: { label: string; n: number; total: number 
 }
 
 // ─────────── computation ───────────
+
+interface TimeBucket {
+  /** Minutes since midnight, e.g. 18*60 = 6:00 PM */
+  minutes: number;
+  label: string;
+  count: number;
+}
 
 interface ComputedStats {
   totalOrders: number;
@@ -453,6 +611,21 @@ interface ComputedStats {
   ratingNotes: { rating: number; note: string }[];
   hourly: { hour: number; count: number }[];
   topTables: { table: string; orders: number; items: number }[];
+  // Time-based additions:
+  buckets15: TimeBucket[];
+  peakBucket: TimeBucket | null;
+  firstOrderAt: Date | null;
+  lastOrderAt: Date | null;
+  serviceDurationMin: number | null;
+  ordersPerHour: number | null;
+  avgQueueWaitSec: number | null;  // queued → cooking
+  avgCookSec: number | null;       // cooking → ready/served
+  avgTotalSec: number | null;      // created_at → served_at
+  medianCookSec: number | null;
+  minCookSec: number | null;
+  maxCookSec: number | null;
+  avgServerCallResponseSec: number | null;
+  unresolvedServerCalls: number;
 }
 
 function computeStats(orders: FullOrder[], calls: ServerCallRow[]): ComputedStats {
@@ -467,12 +640,11 @@ function computeStats(orders: FullOrder[], calls: ServerCallRow[]): ComputedStat
   const addonCount = new Map<string, number>();
   const tableStat = new Map<string, { orders: number; items: number }>();
   const hourCount = new Array(24).fill(0);
+  const bucket15 = new Map<number, number>(); // key = minutes-since-midnight at 15-min granularity
   let itemsServed = 0;
   let peopleServed = 0;
   let partySum = 0;
   let partyCount = 0;
-  let cookSecSum = 0;
-  let cookSecCount = 0;
   let crispy = 0;
   let soft = 0;
   let ghee = 0;
@@ -484,8 +656,20 @@ function computeStats(orders: FullOrder[], calls: ServerCallRow[]): ComputedStat
   const ratingDist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const ratingNotes: { rating: number; note: string }[] = [];
 
+  // Service-flow durations:
+  const queueWaits: number[] = []; // created_at → cooking_started_at
+  const cookDurations: number[] = []; // cooking_started_at → ready_at/served_at
+  const totalDurations: number[] = []; // created_at → served_at
+
+  let firstOrderTs: number | null = null;
+  let lastOrderTs: number | null = null;
+
   for (const { order, items } of orders) {
     statusCounts[order.status]++;
+
+    const createdTs = new Date(order.created_at).getTime();
+    if (firstOrderTs === null || createdTs < firstOrderTs) firstOrderTs = createdTs;
+    if (lastOrderTs === null || createdTs > lastOrderTs) lastOrderTs = createdTs;
 
     const totalItems = items.length;
     itemsServed += totalItems;
@@ -496,20 +680,27 @@ function computeStats(orders: FullOrder[], calls: ServerCallRow[]): ComputedStat
       partyCount += 1;
     }
 
-    if (
-      order.cooking_started_at &&
-      (order.ready_at || order.served_at)
-    ) {
-      const start = new Date(order.cooking_started_at).getTime();
-      const end = new Date(order.ready_at ?? order.served_at!).getTime();
-      if (end > start) {
-        cookSecSum += (end - start) / 1000;
-        cookSecCount += 1;
-      }
+    if (order.cooking_started_at) {
+      const cs = new Date(order.cooking_started_at).getTime();
+      if (cs > createdTs) queueWaits.push((cs - createdTs) / 1000);
+      const endTs = order.ready_at
+        ? new Date(order.ready_at).getTime()
+        : order.served_at
+        ? new Date(order.served_at).getTime()
+        : null;
+      if (endTs && endTs > cs) cookDurations.push((endTs - cs) / 1000);
+    }
+    if (order.served_at) {
+      const sv = new Date(order.served_at).getTime();
+      if (sv > createdTs) totalDurations.push((sv - createdTs) / 1000);
     }
 
-    const hour = new Date(order.created_at).getHours();
-    hourCount[hour]++;
+    const created = new Date(order.created_at);
+    hourCount[created.getHours()]++;
+
+    const minSinceMidnight = created.getHours() * 60 + created.getMinutes();
+    const bucketKey = Math.floor(minSinceMidnight / 15) * 15;
+    bucket15.set(bucketKey, (bucket15.get(bucketKey) ?? 0) + 1);
 
     const t = tableStat.get(order.table_id) ?? { orders: 0, items: 0 };
     t.orders += 1;
@@ -534,6 +725,59 @@ function computeStats(orders: FullOrder[], calls: ServerCallRow[]): ComputedStat
       for (const a of i.addons ?? []) addonCount.set(a, (addonCount.get(a) ?? 0) + 1);
     }
   }
+
+  // Server-call response timing
+  const serverCallResponses: number[] = [];
+  let unresolvedServerCalls = 0;
+  for (const c of calls) {
+    if (c.resolved_at) {
+      const ms =
+        new Date(c.resolved_at).getTime() - new Date(c.created_at).getTime();
+      if (ms >= 0) serverCallResponses.push(ms / 1000);
+    } else {
+      unresolvedServerCalls += 1;
+    }
+  }
+
+  // Build the 15-minute bucket array, spanning min..max bucket keys observed,
+  // so the chart shows the full service arc with zero-count gaps.
+  let buckets15: TimeBucket[] = [];
+  let peakBucket: TimeBucket | null = null;
+  if (bucket15.size > 0) {
+    const minKey = Math.min(...bucket15.keys());
+    const maxKey = Math.max(...bucket15.keys());
+    for (let k = minKey; k <= maxKey; k += 15) {
+      const count = bucket15.get(k) ?? 0;
+      const hh = Math.floor(k / 60);
+      const mm = k % 60;
+      const label = `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, "0")}${
+        hh >= 12 ? "p" : "a"
+      }`;
+      const b: TimeBucket = { minutes: k, label, count };
+      buckets15.push(b);
+      if (!peakBucket || count > peakBucket.count) peakBucket = b;
+    }
+  }
+
+  const serviceDurationMin =
+    firstOrderTs !== null && lastOrderTs !== null
+      ? Math.max(1, Math.round((lastOrderTs - firstOrderTs) / 60000))
+      : null;
+  const ordersPerHour =
+    serviceDurationMin && serviceDurationMin > 0
+      ? (orders.length / serviceDurationMin) * 60
+      : null;
+
+  const avg = (arr: number[]) =>
+    arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+  const median = (arr: number[]) => {
+    if (!arr.length) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const cookSecSum = cookDurations.reduce((s, v) => s + v, 0);
+  const cookSecCount = cookDurations.length;
 
   return {
     totalOrders: orders.length,
@@ -573,5 +817,19 @@ function computeStats(orders: FullOrder[], calls: ServerCallRow[]): ComputedStat
       .map(([table, v]) => ({ table, orders: v.orders, items: v.items }))
       .sort((a, b) => b.orders - a.orders)
       .slice(0, 8),
+    buckets15,
+    peakBucket,
+    firstOrderAt: firstOrderTs !== null ? new Date(firstOrderTs) : null,
+    lastOrderAt: lastOrderTs !== null ? new Date(lastOrderTs) : null,
+    serviceDurationMin,
+    ordersPerHour,
+    avgQueueWaitSec: avg(queueWaits),
+    avgCookSec: avg(cookDurations),
+    avgTotalSec: avg(totalDurations),
+    medianCookSec: median(cookDurations),
+    minCookSec: cookDurations.length ? Math.min(...cookDurations) : null,
+    maxCookSec: cookDurations.length ? Math.max(...cookDurations) : null,
+    avgServerCallResponseSec: avg(serverCallResponses),
+    unresolvedServerCalls,
   };
 }
