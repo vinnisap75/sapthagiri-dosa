@@ -16,7 +16,7 @@ interface FullOrder {
   items: OrderItemRow[];
 }
 
-type Filter = "all" | "needs-action" | "in-progress" | "ready" | "served";
+type Filter = "all" | "served";
 
 export default function KitchenPage() {
   return (
@@ -26,24 +26,32 @@ export default function KitchenPage() {
   );
 }
 
-/** Loud notification ping when a new order arrives. Uses Web Audio so we
- *  don't need a bundled mp3. Browser autoplay blocks unprimed AudioContexts,
- *  so we lazily create one inside a user-gesture handler. */
+/** LOUD notification chime for new orders. Web Audio at max gain, three
+ *  ding-dongs in a row, square wave (more piercing than sine), routed
+ *  through a slight high-shelf filter so it cuts through restaurant noise.
+ *  Browser autoplay blocks unprimed AudioContexts, so we lazily create
+ *  one inside a user-gesture handler. */
 function playOrderChime(ctx: AudioContext) {
-  // A two-note ding-dong: A5 (880) then E5 (659) over 600ms.
-  const now = ctx.currentTime;
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.5, now + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
-  gain.connect(ctx.destination);
-  for (const [freq, when] of [[880, now], [659, now + 0.18]] as const) {
-    const o = ctx.createOscillator();
-    o.type = "sine";
-    o.frequency.value = freq;
-    o.connect(gain);
-    o.start(when);
-    o.stop(when + 0.25);
+  const start = ctx.currentTime;
+  // Repeat the two-note pattern THREE times so it's hard to miss.
+  for (let rep = 0; rep < 3; rep++) {
+    const base = start + rep * 0.55;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, base);
+    gain.gain.exponentialRampToValueAtTime(1.0, base + 0.02); // max volume
+    gain.gain.exponentialRampToValueAtTime(0.0001, base + 0.5);
+    gain.connect(ctx.destination);
+    for (const [freq, offset] of [
+      [988, 0],     // B5 — bright, attention-grabbing
+      [1318, 0.18], // E6 — even higher
+    ] as const) {
+      const o = ctx.createOscillator();
+      o.type = "square"; // square wave = louder + harsher than sine
+      o.frequency.value = freq;
+      o.connect(gain);
+      o.start(base + offset);
+      o.stop(base + offset + 0.25);
+    }
   }
 }
 
@@ -239,17 +247,12 @@ function KitchenInner() {
   );
 
   const visible = useMemo<FullOrder[]>(() => {
-    const set =
-      filter === "needs-action"
-        ? queued
-        : filter === "in-progress"
-        ? cooking
-        : filter === "ready"
-        ? ready
-        : filter === "served"
-        ? served
-        : [...cooking, ...queued]; // "All" = active work only (no ready/served clutter)
-    return set;
+    // Two-tab model: Active shows everything not-served (queued + cooking +
+    // ready). Served shows only served. Once every dosa on an order is
+    // checked, the order auto-jumps to Served, so 'ready' is usually a
+    // very brief transient state that the master rarely needs to see.
+    if (filter === "served") return served;
+    return [...ready, ...cooking, ...queued];
   }, [filter, queued, cooking, ready, served]);
 
   const recentlyServed = useMemo(
@@ -310,17 +313,18 @@ function KitchenInner() {
 
     await sb.from("order_items").update(patch).eq("id", item.id);
 
-    // If after this change every item is done, mark order ready.
+    // If after this change every item is done, jump the order all the way
+    // to "served" — skips Ready since the dosa master already physically
+    // confirmed each dosa is done. This keeps the Active tab clean.
     const allDone = full.items.every((i) =>
       i.id === item.id ? nextIsDone : i.is_done
     ) && nextIsDone;
     if (
       allDone &&
-      full.order.status !== "ready" &&
       full.order.status !== "served" &&
       full.order.status !== "cancelled"
     ) {
-      await setStatus(full.order, "ready");
+      await setStatus(full.order, "served");
     }
   }
 
@@ -376,27 +380,9 @@ function KitchenInner() {
         <div className="max-w-7xl mx-auto px-6 pb-3 flex gap-2 overflow-x-auto">
           <FilterPill
             label="Active"
-            count={active.length}
+            count={active.length + ready.length}
             active={filter === "all"}
             onClick={() => setFilter("all")}
-          />
-          <FilterPill
-            label="Needs action"
-            count={queued.length}
-            active={filter === "needs-action"}
-            onClick={() => setFilter("needs-action")}
-          />
-          <FilterPill
-            label="In progress"
-            count={cooking.length}
-            active={filter === "in-progress"}
-            onClick={() => setFilter("in-progress")}
-          />
-          <FilterPill
-            label="Ready"
-            count={ready.length}
-            active={filter === "ready"}
-            onClick={() => setFilter("ready")}
           />
           <FilterPill
             label="Served"
@@ -841,10 +827,10 @@ function OrderCard({
         )}
         {order.status === "cooking" && (
           <button
-            onClick={() => onSetStatus(order, "ready")}
-            className="flex-1 rounded-xl bg-sapthagiri-burgundy hover:bg-[#561624] text-white font-semibold py-3 text-sm transition"
+            onClick={() => onSetStatus(order, "served")}
+            className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold py-3 text-sm transition"
           >
-            🛎️ Mark ready
+            ✓ Mark all served
           </button>
         )}
         {order.status === "ready" && (
