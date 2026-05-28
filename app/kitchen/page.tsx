@@ -71,12 +71,47 @@ function KitchenInner() {
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // On mount: read the persisted preference. If it was on, render the toggle
-  // visually as "Tap to re-arm" so the master knows to tap to restore audio.
+  // On mount: read the persisted preference. If it was on, ALSO arm a
+  // one-time global gesture listener that silently constructs the
+  // AudioContext on the next click/key/touch. This way the master never
+  // sees a "disarmed" sound state — any incidental interaction (tapping
+  // a filter, tapping an item, anything) re-primes audio automatically.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const v = window.localStorage.getItem(SOUND_PREF_KEY);
-    if (v === "1") setSoundOn(true);
+    if (v !== "1") return;
+    setSoundOn(true);
+
+    function prime() {
+      if (audioCtxRef.current) return;
+      try {
+        const AC =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        const ctx = new AC();
+        audioCtxRef.current = ctx;
+        // Play a tiny silent buffer to actually unlock the audio path
+        // on iOS Safari etc.
+        const buf = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(0);
+      } catch {
+        // ignore
+      }
+    }
+
+    const opts = { once: true, capture: true } as AddEventListenerOptions;
+    window.addEventListener("pointerdown", prime, opts);
+    window.addEventListener("keydown", prime, opts);
+    window.addEventListener("touchstart", prime, opts);
+    return () => {
+      window.removeEventListener("pointerdown", prime, true);
+      window.removeEventListener("keydown", prime, true);
+      window.removeEventListener("touchstart", prime, true);
+    };
   }, []);
 
   function enableSound() {
@@ -355,19 +390,13 @@ function KitchenInner() {
             <button
               onClick={enableSound}
               className={`text-xs uppercase tracking-wider px-2 py-1 rounded transition ${
-                soundOn && audioCtxRef.current
+                soundOn
                   ? "bg-sapthagiri-gold text-[#3a2410]"
-                  : soundOn
-                  ? "bg-amber-400 text-[#3a2410] animate-pulse"
                   : "text-sapthagiri-gold hover:text-white border border-sapthagiri-gold/60"
               }`}
               title="Toggle new-order chime"
             >
-              {soundOn && audioCtxRef.current
-                ? "🔔 ON"
-                : soundOn
-                ? "🔔 Tap to re-arm"
-                : "🔕 Tap to enable sound"}
+              {soundOn ? "🔔 ON" : "🔕 Tap to enable sound"}
             </button>
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
