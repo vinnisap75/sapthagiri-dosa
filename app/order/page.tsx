@@ -227,25 +227,66 @@ function OrderInner() {
     );
   }
 
-  // After-hours: digital ordering closes at 10 PM. Customers are routed to a server.
-  const hourNow = new Date().getHours();
-  const isAfterHours = hourNow >= 22 || hourNow < 6;
-  if (isAfterHours) {
+  // Digital ordering is only open Wednesday 6 PM – 10 PM (the dosa + chaat night).
+  // Wed after 10 PM: customer is asked to flag staff AND leave a Google review.
+  // Any other day/time: customer is told the window and routed to a server.
+  const _now = new Date();
+  const _day = _now.getDay(); // 0=Sun ... 3=Wed ... 6=Sat
+  const _hour = _now.getHours();
+  const isWednesday = _day === 3;
+  const isOpenNow = isWednesday && _hour >= 18 && _hour < 22; // 6 PM (incl.) – 10 PM (excl.)
+  const isWedPostClose = isWednesday && _hour >= 22;
+
+  const GOOGLE_REVIEW_URL =
+    "https://www.google.com/maps/search/?api=1&query=Sapthagiri+Indian+Restaurant";
+
+  if (!isOpenNow) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6 bg-sapthagiri-cream">
         <div className="card p-8 max-w-md text-center border-2 border-sapthagiri-gold">
-          <div className="text-5xl mb-3">🌙</div>
+          <div className="text-5xl mb-3">{isWedPostClose ? "⭐" : "🌙"}</div>
           <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold mb-1">
             Sapthagiri · Table {tableId}
           </div>
           <h1 className="text-2xl font-display text-sapthagiri-burgundy mt-1">
-            Talk to the server about dosa orders
+            {isWedPostClose
+              ? "Thanks for joining us tonight!"
+              : "Please talk to your server"}
           </h1>
-          <p className="text-sm text-stone-700 mt-4">
-            Digital ordering is closed for the night. Please flag down a server
-            and they'll take your order in person.
-          </p>
-          <p className="text-xs text-stone-500 mt-3">Thank you! 🙏</p>
+          {isWedPostClose ? (
+            <>
+              <p className="text-sm text-stone-700 mt-4">
+                Tonight's dosa &amp; chaat service is wrapping up. For anything
+                else, please flag down a server.
+              </p>
+              <p className="text-sm text-stone-700 mt-4 font-semibold">
+                Enjoyed your meal? It would mean the world if you left us a
+                review on Google Maps.
+              </p>
+              <a
+                href={GOOGLE_REVIEW_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary mt-4 w-full inline-flex justify-center"
+              >
+                ⭐ Leave a Google review
+              </a>
+              <p className="text-xs text-stone-500 mt-3">Thank you! 🙏</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-stone-700 mt-4">
+                Our dosa &amp; chaat night is{" "}
+                <strong>Wednesday 6 PM – 10 PM</strong>. The digital menu is
+                only live during that window.
+              </p>
+              <p className="text-sm text-stone-700 mt-3">
+                Right now, please flag down a server for help with anything
+                you'd like to order.
+              </p>
+              <p className="text-xs text-stone-500 mt-4">Thank you! 🙏</p>
+            </>
+          )}
         </div>
       </main>
     );
