@@ -227,6 +227,30 @@ function OrderInner() {
     );
   }
 
+  // After-hours: digital ordering closes at 10 PM. Customers are routed to a server.
+  const hourNow = new Date().getHours();
+  const isAfterHours = hourNow >= 22 || hourNow < 6;
+  if (isAfterHours) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6 bg-sapthagiri-cream">
+        <div className="card p-8 max-w-md text-center border-2 border-sapthagiri-gold">
+          <div className="text-5xl mb-3">🌙</div>
+          <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold mb-1">
+            Sapthagiri · Table {tableId}
+          </div>
+          <h1 className="text-2xl font-display text-sapthagiri-burgundy mt-1">
+            Talk to the server about dosa orders
+          </h1>
+          <p className="text-sm text-stone-700 mt-4">
+            Digital ordering is closed for the night. Please flag down a server
+            and they'll take your order in person.
+          </p>
+          <p className="text-xs text-stone-500 mt-3">Thank you! 🙏</p>
+        </div>
+      </main>
+    );
+  }
+
   const dosas = MENU.filter((m) => m.category === "dosa" && !m.isCustomizable);
   const uttapams = MENU.filter((m) => m.category === "uttapam" && !m.isCustomizable);
   const customDosa = MENU.find((m) => m.id === "custom-dosa")!;

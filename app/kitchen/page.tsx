@@ -26,27 +26,47 @@ export default function KitchenPage() {
   );
 }
 
-/** LOUD notification chime for new orders. Web Audio at max gain, three
- *  ding-dongs in a row, square wave (more piercing than sine), routed
- *  through a slight high-shelf filter so it cuts through restaurant noise.
- *  Browser autoplay blocks unprimed AudioContexts, so we lazily create
- *  one inside a user-gesture handler. */
-function playOrderChime(ctx: AudioContext) {
+/** LOUD notification chime for new orders. Web Audio at max gain.
+ *  CRITICAL for Android Chrome: AudioContext starts in 'suspended' state
+ *  even after creation — we MUST call ctx.resume() before playing or
+ *  nothing comes out. Also fire navigator.vibrate as a tablet backup. */
+async function playOrderChime(ctx: AudioContext) {
+  // Wake the context — this is the #1 Android Chrome footgun.
+  if (ctx.state === "suspended") {
+    try {
+      await ctx.resume();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Vibrate the tablet too, so even if audio is muted the master feels it.
+  if (typeof navigator !== "undefined" && navigator.vibrate) {
+    try {
+      navigator.vibrate([180, 80, 180, 80, 300]);
+    } catch {
+      /* ignore */
+    }
+  }
+
   const start = ctx.currentTime;
-  // Repeat the two-note pattern THREE times so it's hard to miss.
+  // Repeat 3 times. Mix sine + triangle — these carry better than square
+  // through tiny tablet speakers (square waves often clip → quiet).
   for (let rep = 0; rep < 3; rep++) {
     const base = start + rep * 0.55;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, base);
-    gain.gain.exponentialRampToValueAtTime(1.0, base + 0.02); // max volume
+    gain.gain.exponentialRampToValueAtTime(1.0, base + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, base + 0.5);
     gain.connect(ctx.destination);
-    for (const [freq, offset] of [
-      [988, 0],     // B5 — bright, attention-grabbing
-      [1318, 0.18], // E6 — even higher
+    for (const [freq, offset, type] of [
+      [988, 0, "sine"],         // B5 fundamental
+      [988, 0, "triangle"],     // doubled for richness
+      [1318, 0.18, "sine"],     // E6
+      [1318, 0.18, "triangle"],
     ] as const) {
       const o = ctx.createOscillator();
-      o.type = "square"; // square wave = louder + harsher than sine
+      o.type = type;
       o.frequency.value = freq;
       o.connect(gain);
       o.start(base + offset);
@@ -91,6 +111,8 @@ function KitchenInner() {
             .webkitAudioContext;
         const ctx = new AC();
         audioCtxRef.current = ctx;
+        // Android Chrome: resume immediately, this gesture is the unlock.
+        ctx.resume().catch(() => {});
         // Play a tiny silent buffer to actually unlock the audio path
         // on iOS Safari etc.
         const buf = ctx.createBuffer(1, 1, 22050);
@@ -397,6 +419,29 @@ function KitchenInner() {
               title="Toggle new-order chime"
             >
               {soundOn ? "🔔 ON" : "🔕 Tap to enable sound"}
+            </button>
+            <button
+              onClick={() => {
+                // Ensure audio is primed (idempotent), then ring the chime
+                // so the master can verify it on this specific device.
+                if (!audioCtxRef.current) {
+                  try {
+                    const AC =
+                      window.AudioContext ||
+                      (window as unknown as {
+                        webkitAudioContext: typeof AudioContext;
+                      }).webkitAudioContext;
+                    audioCtxRef.current = new AC();
+                  } catch {
+                    return;
+                  }
+                }
+                playOrderChime(audioCtxRef.current);
+              }}
+              className="text-xs uppercase tracking-wider px-2 py-1 rounded border border-sapthagiri-gold/60 text-sapthagiri-gold hover:text-white"
+              title="Play a test chime now"
+            >
+              ▶ Test
             </button>
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
