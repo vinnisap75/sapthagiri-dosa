@@ -66,18 +66,27 @@ function Landing() {
           </p>
         </Link>
 
-        <a
-          href="/order?table=A1"
+        <Link
+          href="/admin/stats"
           className="card p-6 hover:shadow-md transition block"
         >
-          <div className="text-3xl mb-2">📱</div>
-          <h2 className="text-lg font-semibold">Customer Preview</h2>
+          <div className="text-3xl mb-2">📊</div>
+          <h2 className="text-lg font-semibold">Analytics</h2>
           <p className="text-sm text-stone-600 mt-1">
-            See what a customer sees when they scan table A1's QR.
+            Tonight's numbers: orders served, top dosas, ratings, busiest tables.
           </p>
           <p className="text-xs mt-3 text-sapthagiri-burgundy font-semibold">
-            Open as customer →
+            Open dashboard →
           </p>
+        </Link>
+      </section>
+
+      <section className="max-w-5xl mx-auto px-6 pb-4">
+        <a
+          href="/order?table=A1"
+          className="text-xs text-stone-500 hover:text-sapthagiri-burgundy underline"
+        >
+          (preview as customer at table A1 →)
         </a>
       </section>
 
