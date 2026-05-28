@@ -227,18 +227,21 @@ function OrderInner() {
     );
   }
 
-  // Digital ordering is only open Wednesday 6 PM – 10 PM (the dosa + chaat night).
-  // Wed after 10 PM: customer is asked to flag staff AND leave a Google review.
+  // Digital ordering is only open Wednesday 6:00 PM – 9:45 PM (dosa + chaat night).
+  // Wed >= 9:45 PM: customer is thanked + asked to leave a Google review.
   // Any other day/time: customer is told the window and routed to a server.
   const _now = new Date();
   const _day = _now.getDay(); // 0=Sun ... 3=Wed ... 6=Sat
-  const _hour = _now.getHours();
+  const _mins = _now.getHours() * 60 + _now.getMinutes();
+  const OPEN_FROM_MIN = 18 * 60;       // 6:00 PM
+  const OPEN_UNTIL_MIN = 21 * 60 + 45; // 9:45 PM
   const isWednesday = _day === 3;
-  const isOpenNow = isWednesday && _hour >= 18 && _hour < 22; // 6 PM (incl.) – 10 PM (excl.)
-  const isWedPostClose = isWednesday && _hour >= 22;
+  const isOpenNow =
+    isWednesday && _mins >= OPEN_FROM_MIN && _mins < OPEN_UNTIL_MIN;
+  const isWedPostClose = isWednesday && _mins >= OPEN_UNTIL_MIN;
 
   const GOOGLE_REVIEW_URL =
-    "https://www.google.com/maps/search/?api=1&query=Sapthagiri+Indian+Restaurant";
+    "https://www.google.com/maps/place/Sapthagiri+Taste+Of+India/@40.7350028,-74.062476,17z/data=!4m8!3m7!1s0x89c2573021a9bda3:0x92334b2b8a48ba62!8m2!3d40.7350028!4d-74.062476!9m1!1b1";
 
   if (!isOpenNow) {
     return (
@@ -277,8 +280,8 @@ function OrderInner() {
             <>
               <p className="text-sm text-stone-700 mt-4">
                 Our dosa &amp; chaat night is{" "}
-                <strong>Wednesday 6 PM – 10 PM</strong>. The digital menu is
-                only live during that window.
+                <strong>Wednesday 6:00 PM – 9:45 PM</strong>. The digital menu
+                is only live during that window.
               </p>
               <p className="text-sm text-stone-700 mt-3">
                 Right now, please flag down a server for help with anything
