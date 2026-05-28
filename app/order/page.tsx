@@ -227,17 +227,21 @@ function OrderInner() {
     );
   }
 
-  // Digital ordering is only open Wednesday 6:00 PM – 9:45 PM (dosa + chaat night).
-  // Wed >= 9:45 PM: customer is thanked + asked to leave a Google review.
+  // Digital ordering is only open Wednesday 6:00 PM – 11:00 PM (dosa + chaat night).
+  // Staff override: append ?preview=1 to any /order URL to bypass the time gate
+  // entirely (useful for demos and screenshots).
+  // Wed >= 11:00 PM: customer is thanked + asked to leave a Google review.
   // Any other day/time: customer is told the window and routed to a server.
+  const previewMode = params.get("preview") === "1";
   const _now = new Date();
   const _day = _now.getDay(); // 0=Sun ... 3=Wed ... 6=Sat
   const _mins = _now.getHours() * 60 + _now.getMinutes();
   const OPEN_FROM_MIN = 18 * 60;       // 6:00 PM
-  const OPEN_UNTIL_MIN = 21 * 60 + 45; // 9:45 PM
+  const OPEN_UNTIL_MIN = 23 * 60;      // 11:00 PM
   const isWednesday = _day === 3;
   const isOpenNow =
-    isWednesday && _mins >= OPEN_FROM_MIN && _mins < OPEN_UNTIL_MIN;
+    previewMode ||
+    (isWednesday && _mins >= OPEN_FROM_MIN && _mins < OPEN_UNTIL_MIN);
   const isWedPostClose = isWednesday && _mins >= OPEN_UNTIL_MIN;
 
   const GOOGLE_REVIEW_URL =
@@ -280,7 +284,7 @@ function OrderInner() {
             <>
               <p className="text-sm text-stone-700 mt-4">
                 Our dosa &amp; chaat night is{" "}
-                <strong>Wednesday 6:00 PM – 9:45 PM</strong>. The digital menu
+                <strong>Wednesday 6:00 PM – 11:00 PM</strong>. The digital menu
                 is only live during that window.
               </p>
               <p className="text-sm text-stone-700 mt-3">
