@@ -1,10 +1,19 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MENU, MenuItem, addonsForCategory, ADDONS_BY_ID } from "@/lib/menu";
 import { isValidTable } from "@/lib/tables";
 import { supabase } from "@/lib/supabase";
+import {
+  SERVICES,
+  LIMITED_MENU_IDS,
+  getActiveService,
+  getJustClosedService,
+  formatServiceHours,
+  serviceDayName,
+  ServiceWindow,
+} from "@/lib/services";
 
 /** One configurable row in the cart. Each customizable item may have many
  *  lines (each with its own toppings); non-customizable items share a line. */
@@ -38,6 +47,25 @@ function OrderInner() {
   const [error, setError] = useState<string | null>(null);
   const [callingServer, setCallingServer] = useState(false);
   const [serverCalled, setServerCalled] = useState(false);
+  const [staffLoggedIn, setStaffLoggedIn] = useState(false);
+
+  // Staff bypass: if a Supabase session exists (manager/kitchen logged in on
+  // this device), open the menu regardless of the day/time gate so they can
+  // demo or test the flow.
+  useEffect(() => {
+    let cancelled = false;
+    supabase()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (!cancelled) setStaffLoggedIn(!!data.session);
+      })
+      .catch(() => {
+        // Ignore — if Supabase isn't configured, just leave staffLoggedIn false.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const totalItems = lines.reduce((a, b) => a + b.qty, 0);
 
@@ -126,10 +154,14 @@ function OrderInner() {
     setCallingServer(true);
     try {
       const sb = supabase();
-      await sb.from("server_calls").insert({
-        table_id: tableId,
-        reason,
+      // Goes through call_server RPC (rate-limited + length-checked) — the
+      // server_calls table no longer accepts direct anon inserts.
+      const { error: rpcErr } = await sb.rpc("call_server", {
+        p_table_id: tableId,
+        p_order_id: null,
+        p_reason: reason,
       });
+      if (rpcErr) throw rpcErr;
       setServerCalled(true);
       setTimeout(() => setServerCalled(false), 4000);
     } catch (e) {
@@ -227,46 +259,71 @@ function OrderInner() {
     );
   }
 
-  // Digital ordering is only open Wednesday 6:00 PM – 11:00 PM (dosa + chaat night).
-  // Staff override: append ?preview=1 to any /order URL to bypass the time gate
-  // entirely (useful for demos and screenshots).
-  // Wed >= 11:00 PM: customer is thanked + asked to leave a Google review.
-  // Any other day/time: customer is told the window and routed to a server.
+  // Digital ordering is only open during our defined service windows
+  // (see lib/services.ts).  Staff bypasses:
+  //   • signed-in staff (Supabase session) → always open
+  //   • ?preview=1 query param → always open (demos / screenshots)
+  //   • ?service=wednesday|saturday|sunday → force a specific service so
+  //     admin can preview Sat/Sun limited menu mid-week without time travel
+  // After a Wednesday close, we surface the Google review CTA.
   const previewMode = params.get("preview") === "1";
-  const _now = new Date();
-  const _day = _now.getDay(); // 0=Sun ... 3=Wed ... 6=Sat
-  const _mins = _now.getHours() * 60 + _now.getMinutes();
-  const OPEN_FROM_MIN = 18 * 60;       // 6:00 PM
-  const OPEN_UNTIL_MIN = 23 * 60;      // 11:00 PM
-  const isWednesday = _day === 3;
+  const forcedServiceId = params.get("service");
+  const forcedService = forcedServiceId
+    ? SERVICES.find((s) => s.id === forcedServiceId) ?? null
+    : null;
+  const activeService = forcedService ?? getActiveService();
+  const justClosedService = getJustClosedService();
   const isOpenNow =
+    forcedService !== null ||
     previewMode ||
-    (isWednesday && _mins >= OPEN_FROM_MIN && _mins < OPEN_UNTIL_MIN);
-  const isWedPostClose = isWednesday && _mins >= OPEN_UNTIL_MIN;
+    staffLoggedIn ||
+    activeService !== null;
 
   const GOOGLE_REVIEW_URL =
     "https://www.google.com/maps/place/Sapthagiri+Taste+Of+India/@40.7350028,-74.062476,17z/data=!4m8!3m7!1s0x89c2573021a9bda3:0x92334b2b8a48ba62!8m2!3d40.7350028!4d-74.062476!9m1!1b1";
 
   if (!isOpenNow) {
+    // Only show the review CTA if the most-recent close TODAY was the
+    // Wednesday dosa-night service.
+    const showReviewCta = justClosedService?.id === "wednesday";
     return (
       <main className="min-h-screen flex items-center justify-center p-6 bg-sapthagiri-cream">
         <div className="card p-8 max-w-md text-center border-2 border-sapthagiri-gold">
-          <div className="text-5xl mb-3">{isWedPostClose ? "⭐" : "🌙"}</div>
+          <div className="text-5xl mb-3">{showReviewCta ? "⭐" : "🌙"}</div>
           <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold mb-1">
             Sapthagiri · Table {tableId}
           </div>
           <h1 className="text-2xl font-display text-sapthagiri-burgundy mt-1">
-            {isWedPostClose
+            {showReviewCta
               ? "Thanks for joining us tonight!"
-              : "Please talk to your server"}
+              : "We're closed right now"}
           </h1>
-          {isWedPostClose ? (
+
+          <p className="text-sm text-stone-700 mt-4">
+            The digital menu is only live during our service windows. Here's
+            when we're open:
+          </p>
+
+          <ul className="mt-3 text-left text-sm bg-white/60 border border-sapthagiri-gold/40 rounded-lg divide-y divide-stone-200 overflow-hidden">
+            {SERVICES.map((s) => (
+              <li key={s.id} className="px-3 py-2 flex flex-col">
+                <span className="font-semibold text-sapthagiri-burgundy">
+                  {serviceDayName(s)}
+                </span>
+                <span className="text-stone-700 tabular-nums">
+                  {formatServiceHours(s)}
+                </span>
+                <span className="text-xs text-stone-500">
+                  {s.name}
+                  {s.menu === "full" ? " (full menu)" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {showReviewCta ? (
             <>
-              <p className="text-sm text-stone-700 mt-4">
-                Tonight's dosa &amp; chaat service is wrapping up. For anything
-                else, please flag down a server.
-              </p>
-              <p className="text-sm text-stone-700 mt-4 font-semibold">
+              <p className="text-sm text-stone-700 mt-5 font-semibold">
                 Enjoyed your meal? It would mean the world if you left us a
                 review on Google Maps.
               </p>
@@ -274,35 +331,38 @@ function OrderInner() {
                 href={GOOGLE_REVIEW_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-primary mt-4 w-full inline-flex justify-center"
+                className="btn-primary mt-3 w-full inline-flex justify-center"
               >
                 ⭐ Leave a Google review
               </a>
-              <p className="text-xs text-stone-500 mt-3">Thank you! 🙏</p>
             </>
           ) : (
-            <>
-              <p className="text-sm text-stone-700 mt-4">
-                Our dosa &amp; chaat night is{" "}
-                <strong>Wednesday 6:00 PM – 11:00 PM</strong>. The digital menu
-                is only live during that window.
-              </p>
-              <p className="text-sm text-stone-700 mt-3">
-                Right now, please flag down a server for help with anything
-                you'd like to order.
-              </p>
-              <p className="text-xs text-stone-500 mt-4">Thank you! 🙏</p>
-            </>
+            <p className="text-sm text-stone-700 mt-4">
+              For anything you need right now, please flag down a server.
+            </p>
           )}
+          <p className="text-xs text-stone-500 mt-4">Thank you! 🙏</p>
         </div>
       </main>
     );
   }
 
-  const dosas = MENU.filter((m) => m.category === "dosa" && !m.isCustomizable);
-  const uttapams = MENU.filter((m) => m.category === "uttapam" && !m.isCustomizable);
-  const customDosa = MENU.find((m) => m.id === "custom-dosa")!;
-  const customUttapam = MENU.find((m) => m.id === "custom-uttapam")!;
+  // Pick the visible menu based on the active service.  Preview / staff
+  // bypass with no real service active defaults to the full menu.
+  const visibleMenu =
+    activeService && activeService.menu === "limited"
+      ? MENU.filter((m) => LIMITED_MENU_IDS.includes(m.id))
+      : MENU;
+  const showRavaDosaCard = activeService ? activeService.showRavaDosaButton : true;
+  // Sat/Sun breakfast buffet doesn't run separate Jain masala — hide the
+  // "no onion, no garlic" toggle entirely on those services.
+  const allowJainModifier = activeService ? activeService.allowJainModifier : true;
+
+  const dosas = visibleMenu.filter((m) => m.category === "dosa" && !m.isCustomizable);
+  const uttapams = visibleMenu.filter((m) => m.category === "uttapam" && !m.isCustomizable);
+  const customDosa = visibleMenu.find((m) => m.id === "custom-dosa");
+  const customUttapam = visibleMenu.find((m) => m.id === "custom-uttapam");
+  const showBuildYourOwn = !!customDosa || !!customUttapam;
 
   const customDosaLines = lines.filter((l) => l.itemId === "custom-dosa");
   const customUttapamLines = lines.filter((l) => l.itemId === "custom-uttapam");
@@ -327,36 +387,39 @@ function OrderInner() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
-        {/* Rava Dosa — not on the digital menu, customer summons a server */}
-        <section className="rounded-xl border-2 border-sapthagiri-gold bg-sapthagiri-cream p-4">
-          <div className="flex items-start gap-3">
-            <div className="text-3xl">🌾</div>
-            <div className="flex-1 min-w-0">
-              <h2 className="font-display text-lg text-sapthagiri-burgundy">
-                Want a Rava Dosa?
-              </h2>
-              <p className="text-xs text-stone-600 mt-0.5">
-                Rava dosas are made fresh by a server. Tap below and someone
-                will come by to take your order.
-              </p>
+        {/* Rava Dosa — not on the digital menu, customer summons a server.
+            Only shown during services that offer Rava Dosa (Wed night). */}
+        {showRavaDosaCard && (
+          <section className="rounded-xl border-2 border-sapthagiri-gold bg-sapthagiri-cream p-4">
+            <div className="flex items-start gap-3">
+              <div className="text-3xl">🌾</div>
+              <div className="flex-1 min-w-0">
+                <h2 className="font-display text-lg text-sapthagiri-burgundy">
+                  Want a Rava Dosa?
+                </h2>
+                <p className="text-xs text-stone-600 mt-0.5">
+                  Rava dosas are made fresh by a server. Tap below and someone
+                  will come by to take your order.
+                </p>
+              </div>
             </div>
-          </div>
-          <button
-            onClick={() => callServer("Rava Dosa")}
-            disabled={callingServer || serverCalled}
-            className={`mt-3 w-full rounded-lg font-semibold py-3 transition ${
-              serverCalled
-                ? "bg-green-100 border border-green-300 text-green-800"
-                : "bg-sapthagiri-burgundy text-white hover:bg-[#561624]"
-            }`}
-          >
-            {serverCalled
-              ? "✓ Server notified — they're on their way"
-              : callingServer
-              ? "Calling…"
-              : "🛎️ Call server for Rava Dosa"}
-          </button>
-        </section>
+            <button
+              onClick={() => callServer("Rava Dosa")}
+              disabled={callingServer || serverCalled}
+              className={`mt-3 w-full rounded-lg font-semibold py-3 transition ${
+                serverCalled
+                  ? "bg-green-100 border border-green-300 text-green-800"
+                  : "bg-sapthagiri-burgundy text-white hover:bg-[#561624]"
+              }`}
+            >
+              {serverCalled
+                ? "✓ Server notified — they're on their way"
+                : callingServer
+                ? "Calling…"
+                : "🛎️ Call server for Rava Dosa"}
+            </button>
+          </section>
+        )}
 
         {/* Party size — helps the server know who to expect at the table */}
         <section className="card p-4">
@@ -379,64 +442,77 @@ function OrderInner() {
         </section>
 
 
-        {/* Build your own (dosa + uttapam) */}
-        <Section
-          title="Build your own"
-          subtitle="One row per custom dosa or uttapam — add multiple with different toppings"
-        >
-          <BuildYourOwn
-            base={customDosa}
-            lines={customDosaLines}
-            onAdd={() => addOne(customDosa)}
-            onBump={bumpLine}
-            onDelete={deleteLine}
-            onToggleAddon={toggleAddon}
-            onToggleFlag={toggleFlag}
-            onSetCrispiness={setLineCrispiness}
-            onSetCookMedium={setLineCookMedium}
-          />
-          <BuildYourOwn
-            base={customUttapam}
-            lines={customUttapamLines}
-            onAdd={() => addOne(customUttapam)}
-            onBump={bumpLine}
-            onDelete={deleteLine}
-            onToggleAddon={toggleAddon}
-            onToggleFlag={toggleFlag}
-            onSetCrispiness={setLineCrispiness}
-            onSetCookMedium={setLineCookMedium}
-          />
-        </Section>
+        {/* Build your own (dosa + uttapam) — hidden during limited (breakfast)
+            services that don't offer custom builds. */}
+        {showBuildYourOwn && (
+          <Section
+            title="Build your own"
+            subtitle="One row per custom dosa or uttapam — add multiple with different toppings"
+          >
+            {customDosa && (
+              <BuildYourOwn
+                base={customDosa}
+                lines={customDosaLines}
+                onAdd={() => addOne(customDosa)}
+                onBump={bumpLine}
+                onDelete={deleteLine}
+                onToggleAddon={toggleAddon}
+                onToggleFlag={toggleFlag}
+                onSetCrispiness={setLineCrispiness}
+                onSetCookMedium={setLineCookMedium}
+              />
+            )}
+            {customUttapam && (
+              <BuildYourOwn
+                base={customUttapam}
+                lines={customUttapamLines}
+                onAdd={() => addOne(customUttapam)}
+                onBump={bumpLine}
+                onDelete={deleteLine}
+                onToggleAddon={toggleAddon}
+                onToggleFlag={toggleFlag}
+                onSetCrispiness={setLineCrispiness}
+                onSetCookMedium={setLineCookMedium}
+              />
+            )}
+          </Section>
+        )}
 
-        <Section title="Dosa" subtitle="Served with sambar and chutney">
-          {dosas.map((m) => (
-            <FixedItemRow
-              key={m.id}
-              item={m}
-              line={lines.find((l) => l.itemId === m.id)}
-              onAdd={() => addOne(m)}
-              onBump={bumpLine}
-              onToggleFlag={toggleFlag}
-              onSetCrispiness={setLineCrispiness}
-              onSetCookMedium={setLineCookMedium}
-            />
-          ))}
-        </Section>
+        {dosas.length > 0 && (
+          <Section title="Dosa" subtitle="Served with sambar and chutney">
+            {dosas.map((m) => (
+              <FixedItemRow
+                key={m.id}
+                item={m}
+                line={lines.find((l) => l.itemId === m.id)}
+                onAdd={() => addOne(m)}
+                onBump={bumpLine}
+                onToggleFlag={toggleFlag}
+                onSetCrispiness={setLineCrispiness}
+                onSetCookMedium={setLineCookMedium}
+                allowJainModifier={allowJainModifier}
+              />
+            ))}
+          </Section>
+        )}
 
-        <Section title="Uttapam" subtitle="Thick rice-and-lentil pancakes">
-          {uttapams.map((m) => (
-            <FixedItemRow
-              key={m.id}
-              item={m}
-              line={lines.find((l) => l.itemId === m.id)}
-              onAdd={() => addOne(m)}
-              onBump={bumpLine}
-              onToggleFlag={toggleFlag}
-              onSetCrispiness={setLineCrispiness}
-              onSetCookMedium={setLineCookMedium}
-            />
-          ))}
-        </Section>
+        {uttapams.length > 0 && (
+          <Section title="Uttapam" subtitle="Thick rice-and-lentil pancakes">
+            {uttapams.map((m) => (
+              <FixedItemRow
+                key={m.id}
+                item={m}
+                line={lines.find((l) => l.itemId === m.id)}
+                onAdd={() => addOne(m)}
+                onBump={bumpLine}
+                onToggleFlag={toggleFlag}
+                onSetCrispiness={setLineCrispiness}
+                onSetCookMedium={setLineCookMedium}
+                allowJainModifier={allowJainModifier}
+              />
+            ))}
+          </Section>
+        )}
 
         <div className="card p-4 space-y-3">
           <h3 className="font-semibold">Your details</h3>
@@ -577,6 +653,7 @@ function FixedItemRow({
   onToggleFlag,
   onSetCrispiness,
   onSetCookMedium,
+  allowJainModifier = true,
 }: {
   item: MenuItem;
   line?: Line;
@@ -585,6 +662,7 @@ function FixedItemRow({
   onToggleFlag: (lineId: string, key: "noOnionGarlic" | "masalaOnSide") => void;
   onSetCrispiness: (lineId: string, value: "crispy" | "soft") => void;
   onSetCookMedium: (lineId: string, value: "ghee" | "oil") => void;
+  allowJainModifier?: boolean;
 }) {
   const qty = line?.qty ?? 0;
   return (
@@ -662,7 +740,7 @@ function FixedItemRow({
           </span>
         </label>
       )}
-      {line && line.qty > 0 && item.hasMasalaFilling && (
+      {line && line.qty > 0 && item.hasMasalaFilling && allowJainModifier && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
             type="checkbox"

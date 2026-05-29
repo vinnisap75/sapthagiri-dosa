@@ -1,0 +1,20 @@
+# Sapthagiri — code ownership.
+#
+# Every PR to main requires review from at least one of the listed owners.
+# Combined with the branch-protection rule "Require review from Code Owners",
+# this means nothing merges to main without a sreec22 or vinnisap75 sign-off
+# even if Copilot Cloud Agent or another bot opened it.
+
+# Global owners — catch-all for any path not matched below.
+*                       @vinnisap75 @sreec22
+
+# Security-sensitive paths: tighter ownership. Both humans must approve.
+/supabase/              @vinnisap75 @sreec22
+/.github/               @vinnisap75 @sreec22
+/scripts/imessage-daemon/ @vinnisap75 @sreec22
+
+# Frontend routes — either owner can approve solo.
+/app/                   @vinnisap75 @sreec22
+
+# Data / library helpers.
+/lib/                   @vinnisap75 @sreec22

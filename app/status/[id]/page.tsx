@@ -47,15 +47,28 @@ export default function StatusPage() {
 
     async function load() {
       try {
+        // Use SECURITY DEFINER RPCs instead of direct .from() reads — the
+        // orders/order_items tables are no longer anon-readable (security
+        // hardening 001). The RPCs filter strictly by UUID so the UUID
+        // itself is the unguessable capability.
         const [{ data: ord, error: oerr }, { data: its, error: ierr }] =
           await Promise.all([
-            sb.from("orders").select("*").eq("id", orderId).single(),
-            sb.from("order_items").select("*").eq("order_id", orderId),
+            sb.rpc("get_order_status", { p_id: orderId }),
+            sb.rpc("get_order_items", { p_order_id: orderId }),
           ]);
         if (oerr) throw oerr;
         if (ierr) throw ierr;
         if (cancelled) return;
-        setOrder(ord as OrderRow);
+        const ordRow = Array.isArray(ord) ? ord[0] : ord;
+        if (!ordRow) throw new Error("Order not found");
+        // RPC return type omits customer_name/notes/rating_note (PII).
+        // Fill those as null in the local state to keep the OrderRow shape.
+        setOrder({
+          ...(ordRow as Partial<OrderRow>),
+          customer_name: null,
+          notes: null,
+          rating_note: null,
+        } as OrderRow);
         setItems((its ?? []) as OrderItemRow[]);
         await loadQueue();
       } catch (e) {
@@ -64,34 +77,42 @@ export default function StatusPage() {
     }
 
     async function loadQueue() {
-      const { data } = await sb
-        .from("orders")
-        .select("*, order_items(menu_item_id, quantity)")
-        .in("status", ["queued", "cooking"])
-        .order("created_at", { ascending: true });
+      const { data } = await sb.rpc("get_active_queue");
       if (cancelled) return;
+      const rows = (data ?? []) as Array<{
+        id: string;
+        status: OrderRow["status"];
+        created_at: string;
+        cooking_started_at: string | null;
+        item_menu_ids: string[];
+        item_quantities: number[];
+      }>;
       setQueue(
-        (data ?? []).map((row: any) => ({
-          order: row as OrderRow,
-          items: row.order_items as { menu_item_id: string; quantity: number }[],
+        rows.map((row) => ({
+          order: {
+            id: row.id,
+            status: row.status,
+            created_at: row.created_at,
+            cooking_started_at: row.cooking_started_at,
+            // Other OrderRow fields aren't needed for the ETA calc.
+          } as unknown as OrderRow,
+          items: row.item_menu_ids.map((mid, idx) => ({
+            menu_item_id: mid,
+            quantity: row.item_quantities[idx] ?? 1,
+          })),
         }))
       );
     }
 
     load();
 
-    const channel = sb
-      .channel(`order-${orderId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => load()
-      )
-      .subscribe();
+    // Realtime postgres_changes respects RLS, and anon now has no SELECT on
+    // orders, so subscriptions would silently filter to zero. Poll instead.
+    const poll = setInterval(load, 5000);
 
     return () => {
       cancelled = true;
-      sb.removeChannel(channel);
+      clearInterval(poll);
     };
   }, [orderId]);
 
@@ -136,11 +157,14 @@ export default function StatusPage() {
     setCallingServer(true);
     try {
       const sb = supabase();
-      await sb.from("server_calls").insert({
-        table_id: order.table_id,
-        order_id: order.id,
-        reason: "From order status page",
+      // Goes through call_server RPC (rate-limited + length-checked) — the
+      // server_calls table no longer accepts direct anon inserts.
+      const { error: rpcErr } = await sb.rpc("call_server", {
+        p_table_id: order.table_id,
+        p_order_id: order.id,
+        p_reason: "From order status page",
       });
+      if (rpcErr) throw rpcErr;
       setServerCalled(true);
       setTimeout(() => setServerCalled(false), 4000);
     } catch {
