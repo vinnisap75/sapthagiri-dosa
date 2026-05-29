@@ -10,6 +10,7 @@ import {
   OrderLite,
 } from "@/lib/timing";
 import { AuthGuard, SignOutButton } from "../_components/AuthGuard";
+import { BrandLogo } from "../_components/BrandLogo";
 import { MENU_BY_ID, ADDONS_BY_ID } from "@/lib/menu";
 import { getActiveService } from "@/lib/services";
 import {
@@ -622,12 +623,12 @@ function KitchenInner() {
       <header className="bg-sapthagiri-burgundy text-white sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🍳</span>
-            <div>
+            <BrandLogo variant="wordmark" className="h-7 w-auto shrink-0" priority />
+            <div className="border-l border-sapthagiri-gold/40 pl-3">
               <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-                Sapthagiri · Kitchen
+                Kitchen
               </div>
-              <h1 className="text-lg font-display">Dosa Master Board</h1>
+              <h1 className="text-lg font-display leading-none">Dosa Master Board</h1>
             </div>
           </div>
           <div className="text-sm flex items-center gap-6">

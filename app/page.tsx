@@ -10,6 +10,7 @@ import {
   serviceDayName,
 } from "@/lib/services";
 import { AuthGuard, SignOutButton } from "./_components/AuthGuard";
+import { BrandLogo } from "./_components/BrandLogo";
 
 export default function LandingPage() {
   return (
@@ -42,14 +43,11 @@ function Landing() {
     <main className="min-h-screen">
       <header className="bg-sapthagiri-burgundy text-white">
         <div className="max-w-5xl mx-auto px-6 py-8 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">🪔</span>
-            <div>
-              <h1 className="text-2xl font-display tracking-wide">Sapthagiri</h1>
-              <p className="text-xs uppercase tracking-[0.2em] text-sapthagiri-gold">
-                Dosa Ordering Console
-              </p>
-            </div>
+          <div className="flex items-center gap-3 min-w-0">
+            <BrandLogo variant="full" className="h-12 w-auto shrink-0" priority />
+            <p className="text-xs uppercase tracking-[0.2em] text-sapthagiri-gold border-l border-sapthagiri-gold/40 pl-3">
+              Dosa Ordering Console
+            </p>
           </div>
           <SignOutButton className="text-xs uppercase tracking-wider text-sapthagiri-gold hover:text-white" />
         </div>

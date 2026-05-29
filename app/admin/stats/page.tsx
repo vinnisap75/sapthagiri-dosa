@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase, OrderRow, OrderItemRow, ServerCallRow } from "@/lib/supabase";
 import { ADDONS_BY_ID } from "@/lib/menu";
 import { AuthGuard, SignOutButton } from "../../_components/AuthGuard";
+import { BrandLogo } from "../../_components/BrandLogo";
 
 interface FullOrder {
   order: OrderRow;
@@ -74,12 +75,12 @@ function Stats() {
       <header className="bg-sapthagiri-burgundy text-white">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">📊</span>
-            <div>
+            <BrandLogo variant="wordmark" className="h-7 w-auto shrink-0" priority />
+            <div className="border-l border-sapthagiri-gold/40 pl-3">
               <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-                Sapthagiri · Analytics
+                Analytics
               </div>
-              <h1 className="text-lg font-display">Tonight's numbers</h1>
+              <h1 className="text-lg font-display leading-none">Tonight's numbers</h1>
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs">
