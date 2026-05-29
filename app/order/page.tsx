@@ -9,12 +9,20 @@ import {
   SERVICES,
   LIMITED_MENU_IDS,
   getActiveService,
+  getNextService,
   getJustClosedService,
   formatServiceHours,
   serviceDayName,
   ServiceWindow,
 } from "@/lib/services";
 import { BrandLogo } from "@/app/_components/BrandLogo";
+import { estimateWaitMinutes, OrderLite } from "@/lib/timing";
+
+// Per-device reorder cooldown. After ordering, this device can't order again
+// until its order is served OR a cooldown elapses. Base is 5 min, but grows to
+// match the current kitchen wait when the queue is long.
+const REORDER_KEY = "sapthagiri-last-order";
+const REORDER_BASE_COOLDOWN_MIN = 5;
 
 /** One configurable row in the cart. Each customizable item may have many
  *  lines (each with its own toppings); non-customizable items share a line. */
@@ -49,6 +57,10 @@ function OrderInner() {
   const [callingServer, setCallingServer] = useState(false);
   const [serverCalled, setServerCalled] = useState(false);
   const [staffLoggedIn, setStaffLoggedIn] = useState(false);
+  // Reorder cooldown: when set (and not bypassed), the menu is replaced with a
+  // "your order is being made" gate until `until` or the order is served.
+  const [reorderBlock, setReorderBlock] = useState<{ orderId: string; until: number } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Staff bypass: if a Supabase session exists (manager/kitchen logged in on
   // this device), open the menu regardless of the day/time gate so they can
@@ -67,6 +79,51 @@ function OrderInner() {
       cancelled = true;
     };
   }, []);
+
+  // On load, restore any active reorder cooldown for this device. If the prior
+  // order is already served/cancelled (or the cooldown lapsed), clear it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let rec: { orderId: string; until: number } | null = null;
+    try {
+      rec = JSON.parse(window.localStorage.getItem(REORDER_KEY) || "null");
+    } catch {
+      /* ignore */
+    }
+    if (!rec?.orderId || !rec?.until || Date.now() >= rec.until) {
+      try { window.localStorage.removeItem(REORDER_KEY); } catch {}
+      return;
+    }
+    const active = rec;
+    supabase()
+      .rpc("get_order_status", { p_id: active.orderId })
+      .then(
+        ({ data }) => {
+          const st = data?.[0]?.status;
+          if (!st || st === "served" || st === "cancelled") {
+            try { window.localStorage.removeItem(REORDER_KEY); } catch {}
+            setReorderBlock(null);
+          } else {
+            setReorderBlock(active);
+          }
+        },
+        () => setReorderBlock(active) // offline → keep the gate on
+      );
+  }, []);
+
+  // Tick the countdown and auto-lift the gate when the cooldown ends.
+  useEffect(() => {
+    if (!reorderBlock) return;
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNowMs(t);
+      if (t >= reorderBlock.until) {
+        try { window.localStorage.removeItem(REORDER_KEY); } catch {}
+        setReorderBlock(null);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [reorderBlock]);
 
   const totalItems = lines.reduce((a, b) => a + b.qty, 0);
 
@@ -237,6 +294,41 @@ function OrderInner() {
       const { error: itemsErr } = await sb.from("order_items").insert(itemRows);
       if (itemsErr) throw itemsErr;
 
+      // Arm the per-device reorder cooldown. Base 5 min, extended to the live
+      // kitchen wait when the queue is long. Test orders don't arm the gate.
+      if (!testMode) {
+        let cooldownMin = REORDER_BASE_COOLDOWN_MIN;
+        try {
+          const { data: q } = await sb.rpc("get_active_queue");
+          const queueLite: OrderLite[] = (q ?? []).map((row: any) => ({
+            id: row.id,
+            status: row.status,
+            created_at: row.created_at,
+            cooking_started_at: row.cooking_started_at,
+            items: (row.item_menu_ids ?? []).map((mid: string, i: number) => ({
+              menu_item_id: mid,
+              quantity: row.item_quantities?.[i] ?? 1,
+            })),
+          }));
+          const target: OrderLite = {
+            id: orderRow.id,
+            status: "queued",
+            created_at: orderRow.created_at,
+            cooking_started_at: null,
+            items: lines.map((l) => ({ menu_item_id: l.itemId, quantity: l.qty })),
+          };
+          cooldownMin = Math.max(REORDER_BASE_COOLDOWN_MIN, Math.ceil(estimateWaitMinutes(target, queueLite)));
+        } catch {
+          /* best-effort — fall back to the base cooldown */
+        }
+        try {
+          window.localStorage.setItem(
+            REORDER_KEY,
+            JSON.stringify({ orderId: orderRow.id, until: Date.now() + cooldownMin * 60_000 })
+          );
+        } catch {}
+      }
+
       router.push(`/status/${orderRow.id}`);
     } catch (e) {
       setError(
@@ -352,16 +444,60 @@ function OrderInner() {
     );
   }
 
-  // Pick the visible menu based on the active service.  Preview / staff
-  // bypass with no real service active defaults to the full menu.
-  const visibleMenu =
-    activeService && activeService.menu === "limited"
-      ? MENU.filter((m) => LIMITED_MENU_IDS.includes(m.id))
-      : MENU;
-  const showRavaDosaCard = activeService ? activeService.showRavaDosaButton : true;
+  // Reorder cooldown gate — replaces the menu for real customers who already
+  // ordered from this device. Staff / preview / test bypass it.
+  const reorderBypass = staffLoggedIn || previewMode || testMode;
+  if (reorderBlock && !reorderBypass) {
+    const remainMin = Math.max(1, Math.ceil((reorderBlock.until - nowMs) / 60_000));
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6 bg-sapthagiri-cream">
+        <div className="card p-8 max-w-md text-center border-2 border-sapthagiri-gold">
+          <div className="text-5xl mb-3">👨‍🍳</div>
+          <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold mb-1">
+            Sapthagiri · Table {tableId}
+          </div>
+          <h1 className="text-2xl font-display text-sapthagiri-burgundy mt-1">
+            Your order is being made
+          </h1>
+          <p className="text-sm text-stone-700 mt-4">
+            You&apos;ve already placed an order from this device. To keep the
+            kitchen flowing, you can order again in about{" "}
+            <strong className="tabular-nums">{remainMin} min</strong> — or as
+            soon as your current order is served.
+          </p>
+          <a
+            href={`/status/${reorderBlock.orderId}`}
+            className="btn-primary mt-5 w-full inline-flex justify-center"
+          >
+            Track my order →
+          </a>
+          <p className="text-xs text-stone-500 mt-3">
+            Need something right now? Please flag down a server.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  // Which service's menu to render. A real customer only reaches this code
+  // during a live service. Staff/preview bypass with no live service falls
+  // back to the NEXT upcoming service, so a mid-week staff preview shows (e.g.)
+  // Saturday's limited menu rather than defaulting to the full menu.
+  const liveService = getActiveService();
+  const displayService = activeService ?? getNextService();
+  const isPreview = forcedService !== null || liveService === null;
+
+  const isLimited = displayService.menu === "limited";
+  const visibleMenu = isLimited
+    ? MENU.filter((m) => LIMITED_MENU_IDS.includes(m.id))
+    : MENU;
+  const showRavaDosaCard = displayService.showRavaDosaButton;
   // Sat/Sun breakfast buffet doesn't run separate Jain masala — hide the
   // "no onion, no garlic" toggle entirely on those services.
-  const allowJainModifier = activeService ? activeService.allowJainModifier : true;
+  const allowJainModifier = displayService.allowJainModifier;
+  // Limited (buffet) service = no per-item customization at all; guests can
+  // only add or subtract quantity.
+  const allowCustomization = !isLimited;
 
   const dosas = visibleMenu.filter((m) => m.category === "dosa" && !m.isCustomizable);
   const uttapams = visibleMenu.filter((m) => m.category === "uttapam" && !m.isCustomizable);
@@ -399,6 +535,17 @@ function OrderInner() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
+        {/* Staff/preview hint — shown when this isn't a live customer session
+            (logged-in staff mid-week, ?preview=1, or a forced ?service=). */}
+        {isPreview && (
+          <div className="rounded-lg bg-sapthagiri-burgundy/10 border border-sapthagiri-burgundy/30 px-3 py-2 text-xs text-sapthagiri-burgundy">
+            <strong>Staff preview</strong> — showing the{" "}
+            {serviceDayName(displayService)} {displayService.name} menu
+            {isLimited ? " (limited · add/subtract only)" : " (full menu)"}.
+            Guests see this only during service hours.
+          </div>
+        )}
+
         {/* Rava Dosa — not on the digital menu, customer summons a server.
             Only shown during services that offer Rava Dosa (Wed night). */}
         {showRavaDosaCard && (
@@ -503,6 +650,7 @@ function OrderInner() {
                 onSetCrispiness={setLineCrispiness}
                 onSetCookMedium={setLineCookMedium}
                 allowJainModifier={allowJainModifier}
+                allowCustomization={allowCustomization}
               />
             ))}
           </Section>
@@ -521,6 +669,7 @@ function OrderInner() {
                 onSetCrispiness={setLineCrispiness}
                 onSetCookMedium={setLineCookMedium}
                 allowJainModifier={allowJainModifier}
+                allowCustomization={allowCustomization}
               />
             ))}
           </Section>
@@ -666,6 +815,7 @@ function FixedItemRow({
   onSetCrispiness,
   onSetCookMedium,
   allowJainModifier = true,
+  allowCustomization = true,
 }: {
   item: MenuItem;
   line?: Line;
@@ -675,6 +825,8 @@ function FixedItemRow({
   onSetCrispiness: (lineId: string, value: "crispy" | "soft") => void;
   onSetCookMedium: (lineId: string, value: "ghee" | "oil") => void;
   allowJainModifier?: boolean;
+  /** When false (buffet service) hide ALL per-item options — add/subtract only. */
+  allowCustomization?: boolean;
 }) {
   const qty = line?.qty ?? 0;
   return (
@@ -710,7 +862,7 @@ function FixedItemRow({
           </button>
         </div>
       </div>
-      {line && line.qty > 0 && (
+      {allowCustomization && line && line.qty > 0 && (
         <>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <PillToggle
@@ -738,7 +890,7 @@ function FixedItemRow({
           </div>
         </>
       )}
-      {line && line.qty > 0 && item.hasMasalaFilling && (
+      {allowCustomization && line && line.qty > 0 && item.hasMasalaFilling && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
             type="checkbox"
@@ -752,7 +904,7 @@ function FixedItemRow({
           </span>
         </label>
       )}
-      {line && line.qty > 0 && item.hasMasalaFilling && allowJainModifier && (
+      {allowCustomization && line && line.qty > 0 && item.hasMasalaFilling && allowJainModifier && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
             type="checkbox"

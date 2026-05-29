@@ -1,9 +1,10 @@
 // Service-window configuration for the customer-facing /order page.
 //
-// Sapthagiri now runs three service windows:
-//   • Wednesday Dosa Night          6:00 PM – 10:30 PM   (full menu)
-//   • Saturday Breakfast Buffet     8:00 AM – 12:00 PM   (4-dosa limited menu)
-//   • Sunday Breakfast Buffet       8:00 AM – 12:00 PM   (4-dosa limited menu)
+// Sapthagiri now runs three service windows. Digital ordering OPENS ONE HOUR
+// BEFORE each service so guests can order ahead, and closes at service end:
+//   • Wednesday Dosa Night          5:00 PM – 10:30 PM   (full menu; service 6 PM)
+//   • Saturday Breakfast Buffet     7:00 AM – 12:00 PM   (4-dosa limited; service 8 AM)
+//   • Sunday Breakfast Buffet       7:00 AM – 12:00 PM   (4-dosa limited; service 8 AM)
 //
 // The /order page uses getActiveService() to decide whether the digital menu
 // is open right now, and which menu to show.  Staff can bypass by signing in
@@ -26,9 +27,9 @@ export interface ServiceWindow {
 }
 
 export const SERVICES: ServiceWindow[] = [
-  { id: "wednesday", name: "Dosa Night",                 dayOfWeek: 3, openMins: 18 * 60, closeMins: 22 * 60 + 30, menu: "full",    showRavaDosaButton: true,  allowJainModifier: true  },
-  { id: "saturday",  name: "Saturday Breakfast Buffet",  dayOfWeek: 6, openMins:  8 * 60, closeMins: 12 * 60,      menu: "limited", showRavaDosaButton: false, allowJainModifier: false },
-  { id: "sunday",    name: "Sunday Breakfast Buffet",    dayOfWeek: 0, openMins:  8 * 60, closeMins: 12 * 60,      menu: "limited", showRavaDosaButton: false, allowJainModifier: false },
+  { id: "wednesday", name: "Dosa Night",                 dayOfWeek: 3, openMins: 17 * 60, closeMins: 22 * 60 + 30, menu: "full",    showRavaDosaButton: true,  allowJainModifier: true  },
+  { id: "saturday",  name: "Saturday Breakfast Buffet",  dayOfWeek: 6, openMins:  7 * 60, closeMins: 12 * 60,      menu: "limited", showRavaDosaButton: false, allowJainModifier: false },
+  { id: "sunday",    name: "Sunday Breakfast Buffet",    dayOfWeek: 0, openMins:  7 * 60, closeMins: 12 * 60,      menu: "limited", showRavaDosaButton: false, allowJainModifier: false },
 ];
 
 /** Menu items available during a "limited" (breakfast buffet) service. */
