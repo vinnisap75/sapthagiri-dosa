@@ -11,15 +11,9 @@ import type { Session } from "@supabase/supabase-js";
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  // Local preview escape hatch: set NEXT_PUBLIC_PREVIEW_BYPASS=1 in .env.local
-  // to view protected pages without a Supabase session. Never set in prod.
-  const bypass = process.env.NEXT_PUBLIC_PREVIEW_BYPASS === "1";
-  const [state, setState] = useState<"loading" | "in" | "out">(
-    bypass ? "in" : "loading"
-  );
+  const [state, setState] = useState<"loading" | "in" | "out">("loading");
 
   useEffect(() => {
-    if (bypass) return;
     let cancelled = false;
     const sb = supabase();
 
@@ -45,7 +39,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
-  }, [router, pathname, bypass]);
+  }, [router, pathname]);
 
   if (state === "loading") {
     return (
