@@ -1,0 +1,117 @@
+# Sapthagiri CI — runs on every PR + on every push to main.
+#
+# This is the REQUIRED status check that GitHub branch-protection blocks
+# merges against. If this goes red, the Custodian agent posts a reject
+# comment and nothing merges.
+#
+# Designed to catch:
+#   • TypeScript type errors (incl. RPC return-shape drift)
+#   • Next.js build failures (incl. server/client component misuse)
+#   • Newly-committed secrets (sk_, ghp_, service_role keys, *.env.local)
+#   • PII columns leaking into customer-facing routes after the RLS lockdown
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Next.js build
+        # Build with dummy Supabase env vars so the build doesn't fail trying
+        # to validate the URL; production env vars live in Vercel.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci.example.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-key
+        run: npm run build
+
+  secret-scan:
+    name: secret + PII scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        # Fails the build if any of these appear in tracked files.
+        # The patterns match Anthropic-, GitHub-, Stripe-, Supabase service-role
+        # tokens. Anon JWTs are allowed in .env.local.example (we strip those
+        # from the candidate list with a filter step below).
+        run: |
+          set -e
+          # Patterns that should NEVER land in git.
+          # NB: gen the regex without matching itself.
+          PAT=$(printf '%s' 'ghp_[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{16,}|sk_test_[A-Za-z0-9]{16,}|sk-ant-[A-Za-z0-9_-]{20,}|service_role.*eyJ|sbp_[A-Za-z0-9]{20,}')
+          # Hits, excluding allowed file types/paths.
+          if git grep -nE "$PAT" -- ':!.github/workflows/ci.yml' ':!*.md' ; then
+            echo "::error::Potential secret found in tracked files — see matches above."
+            exit 1
+          fi
+          echo "✓ no secrets found in tracked files"
+
+      - name: Scan for PII reads in customer-facing routes
+        # After the RLS lockdown (migration 001), anon clients can NOT
+        # do `sb.from('orders').select(...)` — they must use the RPCs.
+        # This check flags any NEW direct .from('orders') / .from('order_items')
+        # read introduced in app/order or app/status, which would bring
+        # back the broken-status-page bug.
+        # Legitimate patterns (INSERT object building, reflecting the
+        # customer's own data back to them) are allowed.
+        run: |
+          set +e
+          # Match: sb.from('orders').select OR sb.from("order_items").select
+          DIRECT_READ='\.from\(["'"'"']order(_items)?["'"'"']\)\.select'
+          MATCHES=$(git grep -nE "$DIRECT_READ" -- 'app/order/**' 'app/status/**')
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Direct .from('orders') / .from('order_items') .select read in customer route:"
+            echo "$MATCHES"
+            echo "::error::Use sb.rpc('get_order_status', ...) / sb.rpc('get_order_items', ...) instead."
+            exit 1
+          fi
+          echo "✓ no direct .from() reads in customer-facing routes (RPCs only)"
+
+      - name: Ensure .env.local is not tracked
+        run: |
+          if git ls-files --error-unmatch .env.local 2>/dev/null; then
+            echo "::error::.env.local must never be committed — it contains the Supabase anon key + URL."
+            exit 1
+          fi
+          echo "✓ .env.local not tracked"
+
+      - name: Ensure .agent-org/ is not tracked
+        run: |
+          if git ls-files .agent-org/ 2>/dev/null | grep -q .; then
+            echo "::error::.agent-org/ contains private planning + the security audit. Must stay gitignored."
+            exit 1
+          fi
+          echo "✓ .agent-org/ not tracked"

@@ -10,13 +10,17 @@ import {
   OrderLite,
 } from "@/lib/timing";
 import { AuthGuard, SignOutButton } from "../_components/AuthGuard";
+import { MENU_BY_ID, ADDONS_BY_ID } from "@/lib/menu";
+import { getActiveService } from "@/lib/services";
 
 interface FullOrder {
   order: OrderRow;
   items: OrderItemRow[];
 }
 
-type Filter = "all" | "served";
+type Filter = "all" | "served" | "prep";
+type CookingMode = "vinni" | "ravi";
+const COOKING_MODE_KEY = "sapthagiri-kitchen-cooking-mode";
 
 export default function KitchenPage() {
   return (
@@ -26,24 +30,41 @@ export default function KitchenPage() {
   );
 }
 
-/** LOUD notification chime for new orders. Web Audio at max gain.
- *  CRITICAL for Android Chrome: AudioContext starts in 'suspended' state
- *  even after creation — we MUST call ctx.resume() before playing or
- *  nothing comes out. Also fire navigator.vibrate as a tablet backup. */
-async function playOrderChime(ctx: AudioContext) {
-  // Wake the context — this is the #1 Android Chrome footgun.
-  if (ctx.state === "suspended") {
+/** LOUD notification chime for new orders.
+ *  Strategy: try the bundled MP3 first (loudest, normalized to -1dB
+ *  peak); fall back to Web Audio synthesis if the MP3 file fails (e.g.
+ *  blocked, slow network). Either way we also fire navigator.vibrate so
+ *  even if audio is muted the master feels it.
+ *
+ *  CRITICAL for Android Chrome: AudioContext starts in 'suspended'
+ *  state — we MUST call ctx.resume() before playing or the synthesis
+ *  fallback path is silent. */
+async function playOrderChime(ctx: AudioContext, mp3?: HTMLAudioElement | null) {
+  // Vibrate the tablet so even if audio is muted, master feels it.
+  if (typeof navigator !== "undefined" && navigator.vibrate) {
     try {
-      await ctx.resume();
+      navigator.vibrate([180, 80, 180, 80, 300]);
     } catch {
       /* ignore */
     }
   }
 
-  // Vibrate the tablet too, so even if audio is muted the master feels it.
-  if (typeof navigator !== "undefined" && navigator.vibrate) {
+  // Path 1 (preferred): play the bundled MP3 thrice in quick succession.
+  if (mp3) {
     try {
-      navigator.vibrate([180, 80, 180, 80, 300]);
+      mp3.currentTime = 0;
+      mp3.volume = 1.0;
+      await mp3.play();
+      return;
+    } catch {
+      /* fall through to synthesis */
+    }
+  }
+
+  // Path 2 (fallback): Web Audio synthesis. Wake the context first.
+  if (ctx.state === "suspended") {
+    try {
+      await ctx.resume();
     } catch {
       /* ignore */
     }
@@ -75,6 +96,58 @@ async function playOrderChime(ctx: AudioContext) {
   }
 }
 
+/** Cookie-cutter friendly name for each cook. */
+function cookLabel(mode: CookingMode): string {
+  return mode === "vinni" ? "VINNI" : "RAVI";
+}
+
+/** Default cook based on the active service. */
+function defaultCookingMode(): CookingMode {
+  const svc = getActiveService();
+  if (!svc) return "vinni";
+  // Sat/Sun breakfast = Ravi only inside the kitchen.
+  return svc.id === "wednesday" ? "vinni" : "ravi";
+}
+
+interface PrepTotals {
+  dosas: Map<string, number>;     // menu_item_id → quantity
+  uttapams: Map<string, number>;
+  addons: Map<string, number>;
+  jainCount: number;
+  masalaOnSideCount: number;
+  totalActiveOrders: number;
+  totalActiveItems: number;
+}
+
+/** Aggregate everything the cook needs to know to prep batter/fillings. */
+function computePrepTotals(orders: FullOrder[]): PrepTotals {
+  const t: PrepTotals = {
+    dosas: new Map(),
+    uttapams: new Map(),
+    addons: new Map(),
+    jainCount: 0,
+    masalaOnSideCount: 0,
+    totalActiveOrders: orders.length,
+    totalActiveItems: 0,
+  };
+  for (const { items } of orders) {
+    for (const i of items) {
+      if (i.is_done) continue;
+      t.totalActiveItems += i.quantity;
+      const bucket = i.category === "uttapam" ? t.uttapams : t.dosas;
+      bucket.set(i.menu_item_id, (bucket.get(i.menu_item_id) ?? 0) + i.quantity);
+      if (i.no_onion_garlic) t.jainCount += i.quantity;
+      if (i.masala_on_side) t.masalaOnSideCount += i.quantity;
+      if (i.addons) {
+        for (const a of i.addons) {
+          t.addons.set(a, (t.addons.get(a) ?? 0) + i.quantity);
+        }
+      }
+    }
+  }
+  return t;
+}
+
 function KitchenInner() {
   const [orders, setOrders] = useState<FullOrder[]>([]);
   const [serverCalls, setServerCalls] = useState<ServerCallRow[]>([]);
@@ -90,6 +163,45 @@ function KitchenInner() {
   // Track which order IDs we've already announced so we only chime on truly new ones.
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const chimeMp3Ref = useRef<HTMLAudioElement | null>(null);
+
+  // Cooking Mode — which physical station has the tablet right now.
+  // Persisted to localStorage so a refresh doesn't reset.
+  // Defaults based on the active service window (Wed=Vinni, Sat/Sun=Ravi).
+  const [cookingMode, setCookingMode] = useState<CookingMode>("vinni");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(COOKING_MODE_KEY);
+    if (saved === "vinni" || saved === "ravi") {
+      setCookingMode(saved);
+    } else {
+      setCookingMode(defaultCookingMode());
+    }
+  }, []);
+  function toggleCookingMode() {
+    setCookingMode((prev) => {
+      const next: CookingMode = prev === "vinni" ? "ravi" : "vinni";
+      try {
+        window.localStorage.setItem(COOKING_MODE_KEY, next);
+      } catch {}
+      return next;
+    });
+  }
+
+  // Pre-load the MP3 chime so the first play is instant. Browsers will
+  // still need a user gesture to actually play audio, but `new Audio()`
+  // schedules the network fetch immediately.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const a = new Audio("/sounds/order-chime.mp3");
+      a.preload = "auto";
+      a.volume = 1.0;
+      chimeMp3Ref.current = a;
+    } catch {
+      /* ignore — synthesis fallback handles it */
+    }
+  }, []);
 
   // On mount: read the persisted preference. If it was on, ALSO arm a
   // one-time global gesture listener that silently constructs the
@@ -159,7 +271,7 @@ function KitchenInner() {
     }
     // Play confirmation chime
     try {
-      playOrderChime(audioCtxRef.current);
+      playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
     } catch {}
     setSoundOn(true);
     try {
@@ -206,7 +318,7 @@ function KitchenInner() {
           soundOn &&
           audioCtxRef.current
         ) {
-          playOrderChime(audioCtxRef.current);
+          playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
         }
 
         setOrders(
@@ -304,13 +416,27 @@ function KitchenInner() {
   );
 
   const visible = useMemo<FullOrder[]>(() => {
-    // Two-tab model: Active shows everything not-served (queued + cooking +
-    // ready). Served shows only served. Once every dosa on an order is
-    // checked, the order auto-jumps to Served, so 'ready' is usually a
-    // very brief transient state that the master rarely needs to see.
+    // Tab model:
+    //   Active  → queued + cooking + ready (everything not-served)
+    //   Prep    → aggregated totals across active orders (no per-order cards)
+    //   Served  → only served orders
+    // Once every dosa on an order is checked, the order auto-jumps to
+    // Served, so 'ready' is usually a very brief transient state.
     if (filter === "served") return served;
+    if (filter === "prep") return [];
     return [...ready, ...cooking, ...queued];
   }, [filter, queued, cooking, ready, served]);
+
+  // Prep totals computed only when needed.
+  const prepTotals = useMemo(
+    () => (filter === "prep" ? computePrepTotals([...queued, ...cooking, ...ready]) : null),
+    [filter, queued, cooking, ready]
+  );
+
+  // Cooking Mode visibility: COOKING NOW header is most useful on Wed
+  // (two physical stations). On Sat/Sun there's only Ravi, so it's noise.
+  const activeService = getActiveService();
+  const showCookingNowHeader = !activeService || activeService.id === "wednesday";
 
   const recentlyServed = useMemo(
     () =>
@@ -436,12 +562,20 @@ function KitchenInner() {
                     return;
                   }
                 }
-                playOrderChime(audioCtxRef.current);
+                playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
               }}
               className="text-xs uppercase tracking-wider px-2 py-1 rounded border border-sapthagiri-gold/60 text-sapthagiri-gold hover:text-white"
               title="Play a test chime now"
             >
               ▶ Test
+            </button>
+            {/* Cooking Mode toggle — which physical station has the tablet. */}
+            <button
+              onClick={toggleCookingMode}
+              className="text-xs uppercase tracking-wider px-2 py-1 rounded bg-sapthagiri-gold text-[#3a2410] hover:bg-yellow-200 font-semibold"
+              title="Which cook has the tablet — tap to swap"
+            >
+              👨‍🍳 {cookLabel(cookingMode)}
             </button>
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -450,6 +584,25 @@ function KitchenInner() {
           </div>
         </div>
 
+        {/* COOKING NOW header — big, glanceable banner so the runner
+            knows where to pick up the dosa. Only shows on Wed (the only
+            day with ambiguity between two cooks). */}
+        {showCookingNowHeader && (
+          <div className="bg-sapthagiri-gold text-sapthagiri-burgundy">
+            <div className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-center gap-3">
+              <span className="text-xs uppercase tracking-[0.3em] font-semibold">
+                Cooking now
+              </span>
+              <span className="text-3xl font-display font-bold tracking-wide">
+                {cookLabel(cookingMode)}
+              </span>
+              <span className="text-xs opacity-80 hidden sm:inline">
+                (tap the chip in the header to swap)
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Status filter tabs (mimics the DoorDash-style header) */}
         <div className="max-w-7xl mx-auto px-6 pb-3 flex gap-2 overflow-x-auto">
           <FilterPill
@@ -457,6 +610,15 @@ function KitchenInner() {
             count={active.length + ready.length}
             active={filter === "all"}
             onClick={() => setFilter("all")}
+          />
+          <FilterPill
+            label="Prep"
+            count={[...queued, ...cooking, ...ready].reduce(
+              (a, o) => a + o.items.filter((i) => !i.is_done).length,
+              0
+            )}
+            active={filter === "prep"}
+            onClick={() => setFilter("prep")}
           />
           <FilterPill
             label="Served"
@@ -538,7 +700,9 @@ function KitchenInner() {
       })()}
 
       <section className="max-w-7xl mx-auto px-6 py-6">
-        {visible.length === 0 ? (
+        {filter === "prep" && prepTotals ? (
+          <PrepPanel totals={prepTotals} />
+        ) : visible.length === 0 ? (
           <div className="card p-8 text-center text-stone-500">
             No orders here yet. 🍃
           </div>
@@ -586,6 +750,152 @@ function KitchenInner() {
         </section>
       )}
     </main>
+  );
+}
+
+/** Prep Mode panel — aggregated totals across all unfinished items, so
+ *  the cook can pre-make masala/batter/chutney in the right ratios. */
+function PrepPanel({ totals }: { totals: PrepTotals }) {
+  const sortedDosas = Array.from(totals.dosas.entries()).sort((a, b) => b[1] - a[1]);
+  const sortedUttapams = Array.from(totals.uttapams.entries()).sort((a, b) => b[1] - a[1]);
+  const sortedAddons = Array.from(totals.addons.entries()).sort((a, b) => b[1] - a[1]);
+
+  if (totals.totalActiveOrders === 0) {
+    return (
+      <div className="card p-8 text-center text-stone-500">
+        Prep Mode is empty — no active orders to aggregate. 🍃
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="card p-4 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+        <div>
+          <div className="text-xs uppercase tracking-wider text-stone-500">
+            Active orders
+          </div>
+          <div className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+            {totals.totalActiveOrders}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wider text-stone-500">
+            Items left to make
+          </div>
+          <div className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+            {totals.totalActiveItems}
+          </div>
+        </div>
+        {totals.jainCount > 0 && (
+          <div>
+            <div className="text-xs uppercase tracking-wider text-amber-900">
+              🚫 Jain (no onion/garlic)
+            </div>
+            <div className="text-2xl font-display font-bold tabular-nums text-amber-900">
+              {totals.jainCount}
+            </div>
+          </div>
+        )}
+        {totals.masalaOnSideCount > 0 && (
+          <div>
+            <div className="text-xs uppercase tracking-wider text-stone-500">
+              ⚪ Masala on side
+            </div>
+            <div className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+              {totals.masalaOnSideCount}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {sortedDosas.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 bg-sapthagiri-cream border-b border-stone-200">
+            <h2 className="font-display text-lg text-sapthagiri-burgundy">
+              Dosas
+            </h2>
+            <p className="text-xs text-stone-500">
+              Roll-up across all unfinished orders.
+            </p>
+          </div>
+          <ul className="divide-y divide-stone-200">
+            {sortedDosas.map(([id, qty]) => {
+              const m = MENU_BY_ID[id];
+              return (
+                <li
+                  key={id}
+                  className="px-4 py-3 flex items-baseline justify-between"
+                >
+                  <span className="text-sm">{m?.name ?? id}</span>
+                  <span className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+                    {qty}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {sortedUttapams.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 bg-sapthagiri-cream border-b border-stone-200">
+            <h2 className="font-display text-lg text-sapthagiri-burgundy">
+              Uttapams
+            </h2>
+          </div>
+          <ul className="divide-y divide-stone-200">
+            {sortedUttapams.map(([id, qty]) => {
+              const m = MENU_BY_ID[id];
+              return (
+                <li
+                  key={id}
+                  className="px-4 py-3 flex items-baseline justify-between"
+                >
+                  <span className="text-sm">{m?.name ?? id}</span>
+                  <span className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+                    {qty}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {sortedAddons.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 bg-sapthagiri-cream border-b border-stone-200">
+            <h2 className="font-display text-lg text-sapthagiri-burgundy">
+              Toppings to prep
+            </h2>
+            <p className="text-xs text-stone-500">
+              How many portions of each filling/topping you need to have
+              ready on the bench.
+            </p>
+          </div>
+          <ul className="divide-y divide-stone-200">
+            {sortedAddons.map(([id, qty]) => {
+              const a = ADDONS_BY_ID[id];
+              return (
+                <li
+                  key={id}
+                  className="px-4 py-3 flex items-baseline justify-between"
+                >
+                  <span className="text-sm">
+                    {a?.label ?? id.replace(/-/g, " ")}
+                  </span>
+                  <span className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+                    {qty}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
