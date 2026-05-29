@@ -6,6 +6,8 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
-# Private staff-only planning. Do NOT commit. Contains agent org structure,
-# operational secrets, internal comms playbooks, etc.
+# Private staff-only planning. Do NOT commit. Contains the Sentry audit,
+# orchestrator HANDOFF.md with operational state, and runtime worktrees.
+# The COMMITTED agent docs (prompts, protocol, plan, night logs) live under
+# docs/agents/ + docs/PLAN.md + docs/NIGHT_LOG/ + docs/AGENT_QUESTIONS.md.
 .agent-org/
