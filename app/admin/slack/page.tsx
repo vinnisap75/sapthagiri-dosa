@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { AuthGuard, SignOutButton } from "../../_components/AuthGuard";
+import { BrandLogo } from "../../_components/BrandLogo";
 
 export default function SlackAdminPage() {
   return (
@@ -119,12 +120,12 @@ function SlackAdmin() {
       <header className="bg-sapthagiri-burgundy text-white">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">💬</span>
-            <div>
+            <BrandLogo variant="wordmark" className="h-7 w-auto shrink-0" priority />
+            <div className="border-l border-sapthagiri-gold/40 pl-3">
               <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-                Sapthagiri · Admin
+                Admin
               </div>
-              <h1 className="text-lg font-display">Slack fan-out</h1>
+              <h1 className="text-lg font-display leading-none">Slack fan-out</h1>
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs">

@@ -15,7 +15,11 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ["Georgia", "serif"],
+        display: ["var(--font-display)", "Georgia", "serif"],
+      },
+      boxShadow: {
+        // Burgundy-tinted elevation instead of flat black, to match the brand.
+        card: "0 1px 2px rgba(107,28,44,0.06), 0 6px 16px -8px rgba(107,28,44,0.18)",
       },
     },
   },

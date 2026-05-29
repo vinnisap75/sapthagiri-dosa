@@ -8,8 +8,11 @@ import {
   savePrinterConfig,
   clearPrinterConfig,
   printTest,
+  printTicketWith,
 } from "@/lib/printer";
+import { previewTicket, sampleTicket } from "@/lib/ticket";
 import { AuthGuard, SignOutButton } from "../../_components/AuthGuard";
+import { BrandLogo } from "../../_components/BrandLogo";
 
 export default function PrinterAdminPage() {
   return (
@@ -27,7 +30,8 @@ function PrinterAdmin() {
   // Form state — mirrors the persisted config.
   const [brand, setBrand] = useState<"star" | "epson">("star");
   const [host, setHost] = useState("");
-  const [port, setPort] = useState<string>("80");
+  const [port, setPort] = useState<string>("9100");
+  const [bridgeUrl, setBridgeUrl] = useState<string>("");
   const [label, setLabel] = useState<string>("Kitchen printer");
   const [autoPrint, setAutoPrint] = useState<boolean>(false);
   const [autoPrintScope, setAutoPrintScope] =
@@ -45,7 +49,8 @@ function PrinterAdmin() {
       setCfg(saved);
       setBrand(saved.brand);
       setHost(saved.host);
-      setPort(String(saved.port ?? 80));
+      setPort(String(saved.port ?? 9100));
+      setBridgeUrl(saved.bridgeUrl ?? "");
       setLabel(saved.label ?? "Kitchen printer");
       setAutoPrint(saved.autoPrint ?? false);
       setAutoPrintScope(saved.autoPrintScope ?? "all");
@@ -62,6 +67,8 @@ function PrinterAdmin() {
       brand,
       host: host.trim(),
       port: port ? parseInt(port, 10) : undefined,
+      bridgeUrl: bridgeUrl.trim() || undefined,
+      mode: brand === "epson" ? "escpos" : "starline",
       label: label.trim() || undefined,
       autoPrint,
       autoPrintScope,
@@ -105,17 +112,40 @@ function PrinterAdmin() {
     }
   }
 
+  /** Print the full sample order so staff see the real ticket layout. */
+  async function runSample() {
+    if (!cfg) {
+      setTestResult({ ok: false, message: "Save first, then print." });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await printTicketWith(cfg, sampleTicket());
+      setTestResult(
+        r.ok
+          ? { ok: true, message: `Sample sent in ${r.ms}ms.`, ms: r.ms }
+          : { ok: false, message: r.error ?? "Print failed.", ms: r.ms }
+      );
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  // Live, paper-styled preview of the sample order — what the printer outputs.
+  const preview = previewTicket(sampleTicket());
+
   return (
     <main className="min-h-screen bg-stone-50">
       <header className="bg-sapthagiri-burgundy text-white">
         <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🧾</span>
-            <div>
+            <BrandLogo variant="wordmark" className="h-7 w-auto shrink-0" priority />
+            <div className="border-l border-sapthagiri-gold/40 pl-3">
               <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-                Sapthagiri · Admin
+                Admin
               </div>
-              <h1 className="text-lg font-display">Kitchen Printer</h1>
+              <h1 className="text-lg font-display leading-none">Kitchen Printer</h1>
             </div>
           </div>
           <div className="flex items-center gap-4 text-xs">
@@ -195,7 +225,8 @@ function PrinterAdmin() {
 
             <label className="text-sm">
               <div className="font-semibold mb-1">
-                Port <span className="text-stone-400">(optional, default 80)</span>
+                Port{" "}
+                <span className="text-stone-400">(raw print, default 9100)</span>
               </div>
               <input
                 type="text"
@@ -204,6 +235,24 @@ function PrinterAdmin() {
                 onChange={(e) => setPort(e.target.value)}
                 className="w-full border rounded-lg px-3 py-2"
               />
+            </label>
+
+            <label className="text-sm">
+              <div className="font-semibold mb-1">Print bridge URL</div>
+              <input
+                type="text"
+                value={bridgeUrl}
+                onChange={(e) => setBridgeUrl(e.target.value)}
+                placeholder="http://localhost:4000"
+                className="w-full border rounded-lg px-3 py-2"
+              />
+              <p className="text-xs text-stone-500 mt-1">
+                The little relay that talks to the printer on port 9100 (browsers
+                can't open raw sockets). Run <code>npm run bridge</code> and paste
+                its address. <strong>Best:</strong> run it on this same machine and
+                use <code>http://localhost:4000</code> — browsers exempt localhost
+                from the https→http block, so it just works in production.
+              </p>
             </label>
 
             <label className="text-sm">
@@ -259,14 +308,14 @@ function PrinterAdmin() {
 
             {/* Mixed-content warning. */}
             <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 leading-relaxed">
-              <strong>⚠ Mixed-content gotcha:</strong> the deployed app runs
-              over <code>https://</code> but thermal printers speak{" "}
-              <code>http://</code>. Chrome blocks that by default. On the
-              kitchen tablet either (a) open this app over{" "}
-              <code>http://sapthagiribuffet.vercel.app</code> if Vercel allows
-              it, (b) tap the lock icon → Site settings → set "Insecure
-              content" to Allow, or (c) put the kitchen tablet on a tiny LAN
-              proxy. Once the test prints, you're past this.
+              <strong>⚠ Mixed-content gotcha:</strong> the deployed app runs over{" "}
+              <code>https://</code> but the print bridge is <code>http://</code>,
+              and Chrome blocks that across origins. <strong>Easiest fix:</strong>{" "}
+              run the bridge on the <em>same</em> machine as the kitchen browser and
+              point this at <code>http://localhost:4000</code> — localhost is exempt
+              from the block, so no cert or flags needed. If the bridge is on a{" "}
+              <em>different</em> LAN box, either allow "Insecure content" for this
+              site (lock icon → Site settings) or give the bridge a cert.
             </div>
           </div>
 
@@ -280,6 +329,13 @@ function PrinterAdmin() {
               className="rounded-lg border border-sapthagiri-burgundy text-sapthagiri-burgundy px-4 py-2 font-medium hover:bg-sapthagiri-cream disabled:opacity-50"
             >
               {testing ? "Sending…" : "🧾 Test print"}
+            </button>
+            <button
+              onClick={runSample}
+              disabled={!cfg || testing}
+              className="rounded-lg border border-stone-300 text-stone-700 px-4 py-2 font-medium hover:bg-stone-100 disabled:opacity-50"
+            >
+              {testing ? "Sending…" : "🍽 Print sample order"}
             </button>
             {cfg && (
               <button
@@ -302,6 +358,46 @@ function PrinterAdmin() {
               {testResult.message}
             </div>
           )}
+        </div>
+
+        {/* Live receipt preview — what the printer outputs for an order. */}
+        <div className="card p-6">
+          <h2 className="font-display text-lg text-sapthagiri-burgundy mb-1">
+            Receipt preview
+          </h2>
+          <p className="text-xs text-stone-500 mb-4">
+            Exactly how a ticket prints — 32-column layout, same as{" "}
+            <code>lib/ticket.ts</code>. Non-ASCII characters (—, ·) are converted
+            to <code>-</code> so they don't garble on the printer.
+          </p>
+          <div className="flex justify-center">
+            <div
+              className="bg-white shadow-lg border border-stone-200 px-4 py-5 w-[400px] max-w-full font-mono text-[19px] font-semibold leading-snug text-stone-900"
+              style={{ whiteSpace: "pre" }}
+            >
+              {preview.map((l, i) => (
+                <div
+                  key={i}
+                  className={[
+                    l.center ? "text-center" : "",
+                    l.bold ? "font-bold" : "",
+                    // SUB tier: double-height (taller glyphs).
+                    l.tall ? "text-[26px] leading-[1.15]" : "",
+                    // BIG tier ("font H"): tall + wide — stretch horizontally too.
+                    l.wide ? "text-[30px] tracking-[0.12em] scale-x-110 origin-left" : "",
+                    l.big ? "block py-1" : "",
+                    // Red ribbon (table id).
+                    l.red ? "text-red-600" : "",
+                  ].join(" ")}
+                >
+                  {l.text || " "}
+                </div>
+              ))}
+              <div className="text-center text-stone-300 mt-3 text-xs">
+                ✂ - - - - - - - - - - - - - -
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Current pairing */}

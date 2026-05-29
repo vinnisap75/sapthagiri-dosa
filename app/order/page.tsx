@@ -14,6 +14,7 @@ import {
   serviceDayName,
   ServiceWindow,
 } from "@/lib/services";
+import { BrandLogo } from "@/app/_components/BrandLogo";
 
 /** One configurable row in the cart. Each customizable item may have many
  *  lines (each with its own toppings); non-customizable items share a line. */
@@ -375,16 +376,18 @@ function OrderInner() {
     <main className="min-h-screen pb-40">
       <header className="bg-sapthagiri-burgundy text-white">
         <div className="max-w-2xl mx-auto px-4 py-5 flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-              Sapthagiri
+          <div className="flex items-center gap-3 min-w-0">
+            <BrandLogo variant="full" className="h-11 w-auto shrink-0" priority />
+            <div className="min-w-0">
+              <h1 className="text-lg font-display leading-none">
+                Table {tableId}
+              </h1>
               {testMode && (
-                <span className="ml-2 inline-block bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold">
+                <span className="mt-1 inline-block bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold">
                   TEST MODE
                 </span>
               )}
             </div>
-            <h1 className="text-xl font-display">Order — Table {tableId}</h1>
           </div>
           <div className="text-right text-xs">
             <div className="text-sapthagiri-gold uppercase tracking-wider">

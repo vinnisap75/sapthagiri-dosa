@@ -10,6 +10,7 @@ import {
   OrderLite,
 } from "@/lib/timing";
 import { ADDONS_BY_ID } from "@/lib/menu";
+import { BrandLogo } from "@/app/_components/BrandLogo";
 
 interface ActiveQueue {
   order: OrderRow;
@@ -227,12 +228,10 @@ export default function StatusPage() {
   return (
     <main className="min-h-screen pb-24">
       <header className="bg-sapthagiri-burgundy text-white">
-        <div className="max-w-2xl mx-auto px-4 py-5">
-          <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-            Sapthagiri
-          </div>
-          <h1 className="text-xl font-display">
-            Order Status — Table {order.table_id}
+        <div className="max-w-2xl mx-auto px-4 py-5 flex items-center gap-3">
+          <BrandLogo variant="full" className="h-11 w-auto shrink-0" priority />
+          <h1 className="text-lg font-display leading-tight">
+            Order status · Table {order.table_id}
           </h1>
         </div>
       </header>

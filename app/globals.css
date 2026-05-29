@@ -2,15 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+}
+
 html, body {
   background: #FAF6EE;
   color: #1f1410;
-  min-height: 100vh;
+  /* dvh avoids the iOS Safari viewport jump on the customer phone screens. */
+  min-height: 100dvh;
+}
+
+/* Headings get balanced wrapping (no orphans); body copy reads cleaner. */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sapthagiri-gold focus-visible:ring-offset-2 focus-visible:ring-offset-sapthagiri-cream;
   }
   .btn-primary {
     @apply btn bg-sapthagiri-burgundy text-white hover:bg-[#561624];
@@ -22,7 +36,7 @@ html, body {
     @apply btn bg-white border border-stone-300 hover:bg-stone-50;
   }
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-stone-200;
+    @apply bg-white rounded-xl shadow-card border border-stone-200/80;
   }
   .badge {
     @apply inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide;

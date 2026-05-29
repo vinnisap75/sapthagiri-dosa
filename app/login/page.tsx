@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { BrandLogo } from "@/app/_components/BrandLogo";
 
 function LoginInner() {
   const router = useRouter();
@@ -40,10 +41,10 @@ function LoginInner() {
     <main className="min-h-screen flex items-center justify-center p-6">
       <form onSubmit={submit} className="card p-6 w-full max-w-sm space-y-4">
         <div className="text-center">
-          <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
-            Sapthagiri
+          <div className="mx-auto mb-4 flex justify-center rounded-xl bg-sapthagiri-burgundy px-5 py-4">
+            <BrandLogo variant="full" className="h-12 w-auto" priority />
           </div>
-          <h1 className="text-xl font-display text-sapthagiri-burgundy mt-1">
+          <h1 className="text-2xl font-display text-sapthagiri-burgundy">
             Staff sign in
           </h1>
           <p className="text-xs text-stone-500 mt-1">

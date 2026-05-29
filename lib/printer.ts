@@ -1,31 +1,54 @@
 /**
- * Thermal printer client — Sapthagiri kitchen.
+ * Thermal/impact printer client — Sapthagiri kitchen (browser side).
  *
- * Supports Star WebPRNT and Epson ePOS thermal printers over HTTP on the
- * local LAN. Both speak ESC/POS at the wire level; the difference is the
- * envelope:
- *   • Star WebPRNT  → POST to /StarWebPRNT/SendMessage with a SOAP body
- *   • Epson ePOS    → POST to /cgi-bin/epos/service.cgi?devid=local_printer
+ * WHY A BRIDGE: our kitchen printer (Star SP742 behind an IFBD-HE07/08 LAN
+ * card) only accepts jobs as raw ESC/POS on TCP port 9100 — it has no WebPRNT
+ * HTTP endpoint (that path 404s). Browsers can't open raw TCP sockets, and our
+ * Vercel deployment lives in the cloud where it can't route to a LAN IP. So
+ * the browser POSTs a ticket to a tiny print-bridge running ON the restaurant
+ * LAN (scripts/print-bridge), and the bridge does the raw socket write to the
+ * printer.
  *
- * Tested with: Star TSP143IIIW, Epson TM-m30.
+ *   Kitchen tablet (this code)  ──POST /print {host,port,mode,ticket}──▶
+ *   Print-bridge (Node, on the LAN)  ──raw ESC/POS──▶  Printer :9100
  *
- * For SatuSun breakfast service: auto-print every incoming order so Ravi
- * has a paper queue beside the tawa.
- * For Wed Rava Dosa: print only when Cooking Mode = Vinni (tablet at
- * front station, Ravi is the destination cook).
+ * The bridge returns a REAL success/failure (it reads the socket result), so
+ * unlike the old no-cors fire-and-forget, "Test print" reflects reality.
  *
- * The client stays in the browser — the kitchen tablet talks to the
- * printer directly over WiFi. No server round-trip = no latency.
+ * Mixed-content note: an https:// page can't call an http:// bridge. On the
+ * kitchen tablet either run the app over http on the LAN, or give the bridge a
+ * cert. See scripts/print-bridge/README.md.
  */
+
+import {
+  Ticket,
+  PrinterMode,
+  renderTicket,
+  orderToTicket,
+} from "./ticket";
+
+// Re-export so existing importers (app/kitchen, app/admin) keep working.
+export type { Ticket, TicketLine, PrinterMode } from "./ticket";
+export { orderToTicket } from "./ticket";
 
 // ─────────── public API ───────────
 
 export interface PrinterConfig {
   brand: "star" | "epson";
-  /** LAN IP of the printer, e.g. "192.168.1.42". No scheme, no port. */
+  /** LAN IP of the printer, e.g. "10.1.10.200". No scheme, no port. */
   host: string;
-  /** Optional port override; defaults: Star 80, Epson 80. */
+  /** Raw-print port; defaults to 9100 (JetDirect / ESC-POS raw). */
   port?: number;
+  /**
+   * Base URL of the LAN print-bridge, e.g. "http://10.1.10.197:4000".
+   * The browser POSTs tickets here; the bridge sockets them to the printer.
+   */
+  bridgeUrl?: string;
+  /**
+   * Command dialect. Star SP742/IFBD = "starline"; Epson (and Star units in
+   * ESC/POS firmware) = "escpos". Defaults from brand when omitted.
+   */
+  mode?: PrinterMode;
   /** Friendly label shown in the admin UI. */
   label?: string;
   /** When true, kitchen page fires a print for every NEW order it sees. */
@@ -38,37 +61,16 @@ export interface PrinterConfig {
   autoPrintScope?: "all" | "sat-sun-only" | "wed-only";
 }
 
-export interface TicketLine {
-  /** Quantity, e.g. 2. */
-  qty: number;
-  /** Item name, e.g. "Masala Dosa". */
-  name: string;
-  /** Optional notes shown indented below the item. */
-  notes?: string[];
-  /** Bold the line (e.g. for headers). */
-  bold?: boolean;
-}
-
-export interface Ticket {
-  /** Table id, e.g. "A3". Big and centered at top. */
-  tableId: string;
-  /** Order id slug for the kitchen to grep, e.g. "71e5c39d". */
-  orderId?: string;
-  /** Time the order was placed. */
-  createdAt: Date;
-  /** Customer-facing note (e.g. dietary restriction). */
-  customerNote?: string;
-  /** Line items. */
-  lines: TicketLine[];
-  /** Free-text footer, e.g. "RAVA DOSA — make on big tawa". */
-  footer?: string;
-}
-
 export interface PrintResult {
   ok: boolean;
   error?: string;
   /** Round-trip ms for debugging slow printers. */
   ms: number;
+}
+
+/** Default command dialect for a brand when config doesn't pin one. */
+export function defaultMode(brand: PrinterConfig["brand"]): PrinterMode {
+  return brand === "epson" ? "escpos" : "starline";
 }
 
 /** Persist the config in localStorage so the admin only sets IP once. */
@@ -107,228 +109,102 @@ export async function printTicketWith(
   cfg: PrinterConfig,
   ticket: Ticket
 ): Promise<PrintResult> {
-  const escpos = renderEscPos(ticket);
-  return cfg.brand === "star"
-    ? sendStarWebPRNT(cfg, escpos)
-    : sendEpsonEpos(cfg, escpos);
+  if (!cfg.bridgeUrl) {
+    return {
+      ok: false,
+      error:
+        "No print-bridge URL set. Run scripts/print-bridge on a LAN machine " +
+        "and add its URL in /admin/printer.",
+      ms: 0,
+    };
+  }
+  return sendToBridge(cfg, ticket);
 }
 
-/** Print a one-line test page so the admin knows the IP works. */
+/** Print a one-line test page so the admin knows the path works end to end. */
 export async function printTest(cfg: PrinterConfig): Promise<PrintResult> {
   const ticket: Ticket = {
     tableId: "TEST",
     createdAt: new Date(),
     lines: [
-      { qty: 1, name: "Printer test — Sapthagiri", bold: true },
+      { qty: 1, name: "Printer test - Sapthagiri", bold: true },
       { qty: 1, name: `Brand: ${cfg.brand.toUpperCase()}` },
-      { qty: 1, name: `Host: ${cfg.host}` },
+      { qty: 1, name: `Host: ${cfg.host}:${cfg.port ?? 9100}` },
     ],
     footer: "If you can read this, you are good to go.",
   };
   return printTicketWith(cfg, ticket);
 }
 
-// ─────────── ESC/POS rendering ───────────
+// ─────────── transport: POST to the LAN bridge ───────────
 
-const ESC = 0x1b;
-const GS = 0x1d;
-const LF = 0x0a;
-
-/** Compose the raw ESC/POS byte stream for one ticket. */
-function renderEscPos(ticket: Ticket): Uint8Array {
-  const buf: number[] = [];
-  const push = (...bytes: number[]) => buf.push(...bytes);
-  const pushText = (s: string) => {
-    for (let i = 0; i < s.length; i++) buf.push(s.charCodeAt(i) & 0xff);
-  };
-
-  // Initialize printer.
-  push(ESC, 0x40);
-
-  // Big centered table id.
-  push(ESC, 0x61, 0x01); // align center
-  push(GS, 0x21, 0x33); // double-width + double-height
-  pushText(ticket.tableId);
-  push(LF);
-  push(GS, 0x21, 0x00); // reset size
-  push(ESC, 0x61, 0x00); // align left
-
-  // Timestamp + order id row.
-  pushText(formatTime(ticket.createdAt));
-  if (ticket.orderId) {
-    pushText("   #" + ticket.orderId.slice(0, 6));
-  }
-  push(LF);
-  pushText("--------------------------------");
-  push(LF);
-
-  // Customer note (Jain, allergies, etc.).
-  if (ticket.customerNote) {
-    push(ESC, 0x45, 0x01); // bold on
-    pushText("NOTE: " + ticket.customerNote);
-    push(ESC, 0x45, 0x00); // bold off
-    push(LF);
-    pushText("--------------------------------");
-    push(LF);
-  }
-
-  // Line items.
-  for (const line of ticket.lines) {
-    if (line.bold) push(ESC, 0x45, 0x01);
-    pushText(`${line.qty} x ${line.name}`);
-    if (line.bold) push(ESC, 0x45, 0x00);
-    push(LF);
-    if (line.notes) {
-      for (const n of line.notes) {
-        pushText("    " + n);
-        push(LF);
-      }
-    }
-  }
-
-  // Footer.
-  if (ticket.footer) {
-    push(LF);
-    pushText("--------------------------------");
-    push(LF);
-    push(ESC, 0x45, 0x01);
-    pushText(ticket.footer);
-    push(ESC, 0x45, 0x00);
-    push(LF);
-  }
-
-  // Feed + cut.
-  push(LF, LF, LF, LF);
-  push(GS, 0x56, 0x01); // partial cut
-
-  return new Uint8Array(buf);
-}
-
-function formatTime(d: Date): string {
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-// ─────────── wire transports ───────────
-
-/** Star WebPRNT — SOAP envelope, base64-encoded ESC/POS in the body. */
-async function sendStarWebPRNT(
+/**
+ * Render the ticket to bytes HERE (so the dialect/layout logic stays in one
+ * place — lib/ticket.ts — shared with the on-screen preview), base64 it, and
+ * POST to the bridge. The bridge stays a dumb, dependency-free relay: decode
+ * base64, write to the printer socket, report the real result.
+ */
+async function sendToBridge(
   cfg: PrinterConfig,
-  bytes: Uint8Array
-): Promise<PrintResult> {
-  const port = cfg.port ?? 80;
-  const url = `http://${cfg.host}:${port}/StarWebPRNT/SendMessage`;
-  const b64 = bytesToBase64(bytes);
-  // Star expects a request envelope with binary data wrapped in a
-  // <PrintRequestBinary> tag. Star calls this "Binary mode".
-  const body =
-    `<?xml version="1.0" encoding="UTF-8"?>` +
-    `<PrintRequestBinary>${b64}</PrintRequestBinary>`;
-  return doPost(url, body, "text/xml; charset=UTF-8");
-}
-
-/** Epson ePOS-Print — XML envelope with base64 body. */
-async function sendEpsonEpos(
-  cfg: PrinterConfig,
-  bytes: Uint8Array
-): Promise<PrintResult> {
-  const port = cfg.port ?? 80;
-  const url = `http://${cfg.host}:${port}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
-  // Epson's "raw command transmission" wrapper: send ESC/POS as <epos-print><epos-text command-binary="base64data"/></epos-print>
-  // The simpler path used by most apps: post the raw bytes with
-  // Content-Type application/octet-stream. Both work on TM-m30/T82.
-  const ab = (bytes as Uint8Array & {
-    buffer: ArrayBufferLike;
-  }).buffer.slice(0);
-  return doPost(url, ab as ArrayBuffer, "application/octet-stream");
-}
-
-async function doPost(
-  url: string,
-  body: string | ArrayBuffer,
-  contentType: string
+  ticket: Ticket
 ): Promise<PrintResult> {
   const start = performance.now();
+  const mode = cfg.mode ?? defaultMode(cfg.brand);
+  const url = cfg.bridgeUrl!.replace(/\/+$/, "") + "/print";
+  const data = bytesToBase64(renderTicket(ticket, mode));
   try {
-    // mode: "no-cors" — thermal printers don't return CORS headers, so we
-    // fire-and-forget. The response will be opaque (we can't read it), but
-    // a successful fetch() that doesn't throw means the printer accepted
-    // the bytes at the TCP level. Any throw = network unreachable, mixed
-    // content blocked, etc.
-    await fetch(url, {
+    const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": contentType },
-      body: body as BodyInit,
-      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        host: cfg.host,
+        port: cfg.port ?? 9100,
+        data,
+      }),
     });
     const ms = Math.round(performance.now() - start);
-    return { ok: true, ms };
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { ok: false, error: `Bridge HTTP ${res.status}. ${body}`.trim(), ms };
+    }
+    const result = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+    };
+    return result.ok
+      ? { ok: true, ms }
+      : { ok: false, error: result.error ?? "Bridge reported failure.", ms };
   } catch (e) {
     const ms = Math.round(performance.now() - start);
     const msg = e instanceof Error ? e.message : String(e);
     let friendly = msg;
     if (/mixed content|blocked.*http/i.test(msg)) {
       friendly =
-        "Browser blocked HTTP→HTTPS mixed content. Open this page over http:// " +
-        "on the kitchen tablet, OR allow insecure content for this site in Chrome settings.";
+        "Browser blocked the http:// bridge from an https:// page. Open the " +
+        "app over http on the kitchen tablet, or give the bridge a cert.";
     } else if (/Failed to fetch|NetworkError/i.test(msg)) {
-      friendly = "Network error — printer offline, wrong IP, or different WiFi?";
+      friendly =
+        "Can't reach the print-bridge. Is it running, and on the same WiFi?";
     }
     return { ok: false, error: friendly, ms };
   }
 }
 
-// ─────────── small utils ───────────
+// ─────────── byte rendering (re-exported for callers/tests) ───────────
 
-function bytesToBase64(bytes: Uint8Array): string {
-  // Browser-safe base64. Avoids Buffer (Node-only).
-  let s = "";
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  if (typeof btoa !== "undefined") return btoa(s);
-  // Node fallback (shouldn't run in our 'use client' callers).
-  return Buffer.from(bytes).toString("base64");
+/** Render a ticket to raw bytes. Thin pass-through to lib/ticket. */
+export function renderTicketBytes(
+  ticket: Ticket,
+  mode: PrinterMode
+): Uint8Array {
+  return renderTicket(ticket, mode);
 }
 
-// ─────────── conversions from app types ───────────
-
-/**
- * Convert an OrderRow + OrderItemRow[] (from lib/supabase.ts) into a
- * Ticket the printer can consume. This is what kitchen page calls when
- * auto-print is on.
- */
-export function orderToTicket(opts: {
-  tableId: string;
-  orderId: string;
-  createdAt: string;
-  notes?: string | null;
-  items: Array<{
-    quantity: number;
-    name: string;
-    crispiness?: "soft" | "crispy";
-    cook_medium?: "oil" | "ghee";
-    addons?: string[];
-    no_onion_garlic?: boolean;
-    masala_on_side?: boolean;
-  }>;
-  footer?: string;
-}): Ticket {
-  return {
-    tableId: opts.tableId,
-    orderId: opts.orderId,
-    createdAt: new Date(opts.createdAt),
-    customerNote: opts.notes ?? undefined,
-    footer: opts.footer,
-    lines: opts.items.map((i) => {
-      const notes: string[] = [];
-      const mods: string[] = [];
-      if (i.crispiness) mods.push(i.crispiness === "crispy" ? "CRISPY" : "SOFT");
-      if (i.cook_medium) mods.push(i.cook_medium === "ghee" ? "GHEE" : "OIL");
-      if (mods.length) notes.push(mods.join(" · "));
-      if (i.addons && i.addons.length) {
-        notes.push("+ " + i.addons.map((a) => a.replace(/-/g, " ")).join(", "));
-      }
-      if (i.no_onion_garlic) notes.push("NO ONION / GARLIC");
-      if (i.masala_on_side) notes.push("MASALA ON SIDE");
-      return { qty: i.quantity, name: i.name, notes };
-    }),
-  };
+/** Browser-safe base64 of a byte array (avoids Node's Buffer). */
+function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return typeof btoa !== "undefined"
+    ? btoa(s)
+    : Buffer.from(bytes).toString("base64");
 }
