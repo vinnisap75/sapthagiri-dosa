@@ -381,9 +381,13 @@ function PrinterAdmin() {
                   className={[
                     l.center ? "text-center" : "",
                     l.bold ? "font-bold" : "",
-                    // Double-height body lines: taller glyphs, same width.
-                    l.tall ? "text-[28px] leading-[1.15] scale-y-110 origin-left" : "",
-                    l.big ? "text-5xl font-extrabold tracking-wider py-1" : "",
+                    // SUB tier: double-height (taller glyphs).
+                    l.tall ? "text-[26px] leading-[1.15]" : "",
+                    // BIG tier ("font H"): tall + wide — stretch horizontally too.
+                    l.wide ? "text-[30px] tracking-[0.12em] scale-x-110 origin-left" : "",
+                    l.big ? "block py-1" : "",
+                    // Red ribbon (table id).
+                    l.red ? "text-red-600" : "",
                   ].join(" ")}
                 >
                   {l.text || " "}

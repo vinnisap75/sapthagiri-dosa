@@ -267,12 +267,16 @@ function KitchenInner() {
     if (!cfg) {
       return { ok: false, error: "No printer paired. Go to /admin/printer." };
     }
+    // Sat/Sun breakfast = buffet: no customization, just dosa counts + total.
+    const svc = getActiveService(new Date(full.order.created_at));
+    const buffet = svc?.menu === "limited";
     const ticket = orderToTicket({
       tableId: full.order.table_id,
       orderId: full.order.id,
       createdAt: full.order.created_at,
       notes: full.order.notes,
       items: full.items,
+      buffet,
       footer: full.order.is_test ? "*** TEST ORDER — DO NOT MAKE ***" : undefined,
     });
     return printTicket(ticket);

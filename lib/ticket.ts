@@ -42,6 +42,8 @@ export interface Ticket {
   lines: TicketLine[];
   /** Free-text footer, e.g. "RAVA DOSA — make on big tawa". */
   footer?: string;
+  /** Buffet total (Sat/Sun): when set, prints a big "<n> DOSAS" total line. */
+  total?: number;
 }
 
 // ─────────── low-level opcodes ───────────
@@ -53,6 +55,9 @@ const LF = 0x0a;
 /** 32-column template — matches the SP742 / TSP100 receipt width we use. */
 const COLS = 32;
 const DIVIDER = "-".repeat(COLS);
+/** At double-width ("font H") only ~half the columns fit per line. Lines longer
+ *  than this fall back to tall-only so long dosa names stay on one line. */
+const WIDE_COLS = 16;
 
 /** A tiny byte-buffer with dialect-aware control sequences. */
 class Printout {
@@ -85,11 +90,14 @@ class Printout {
     return this.raw(ESC, 0x40);
   }
 
-  /** n: 0 = left, 1 = center, 2 = right. */
+  /**
+   * n: 0 = left, 1 = center, 2 = right.
+   * NOTE: only emitted in ESC/POS mode. The SP742 dot-impact unit prints the
+   * Star Line alignment command (ESC GS a) as garbage, so in starline mode we
+   * skip it and left-align — verified clean on the real printer.
+   */
   align(n: 0 | 1 | 2): this {
-    return this.mode === "starline"
-      ? this.raw(ESC, GS, 0x61, n) // Star Line: ESC GS a n
-      : this.raw(ESC, 0x61, n); //     ESC/POS:  ESC a n
+    return this.mode === "starline" ? this : this.raw(ESC, 0x61, n);
   }
 
   bold(on: boolean): this {
@@ -99,28 +107,67 @@ class Printout {
     return this.raw(ESC, 0x45, on ? 1 : 0); // ESC/POS: ESC E n
   }
 
-  /** Toggle double-width + double-height for the table header. */
+  /**
+   * Red ink on the SP742's 2-color ribbon. Star dot-impact uses ESC 4 (select
+   * red/secondary) and ESC 5 (back to black). ESC/POS uses GS ( N for color,
+   * which most cheap units ignore — so we no-op there.
+   */
+  red(on: boolean): this {
+    if (this.mode === "starline") {
+      return on ? this.raw(ESC, 0x34) : this.raw(ESC, 0x35); // ESC 4 / ESC 5
+    }
+    return this; // ESC/POS color: skip (unsupported on our targets)
+  }
+
+  /**
+   * Biggest text — table number only. Double-tall AND double-wide. On the
+   * SP742 (dot impact) that's ESC h 1 + ESC W 1; double-width is fine here
+   * because the table id is short, so the wide letter spacing doesn't matter.
+   */
   bigOn(): this {
     return this.mode === "starline"
-      ? this.raw(ESC, 0x69, 1, 1) // Star Line: ESC i n1 n2 (height, width)
-      : this.raw(GS, 0x21, 0x33); //  ESC/POS:  GS ! (double w+h)
+      ? this.raw(ESC, 0x68, 1, ESC, 0x57, 1) // ESC h 1 (tall) + ESC W 1 (wide)
+      : this.raw(GS, 0x21, 0x33); //            ESC/POS: GS ! double w+h
   }
 
   bigOff(): this {
     return this.mode === "starline"
-      ? this.raw(ESC, 0x69, 0, 0)
+      ? this.raw(ESC, 0x68, 0, ESC, 0x57, 0) // cancel tall + wide
       : this.raw(GS, 0x21, 0x00);
   }
 
-  /**
-   * Double-HEIGHT (taller, same width) for the whole ticket body. Keeps the
-   * full 32 columns so long dosa names don't wrap, while making every line big
-   * enough for Ravi to read at a glance from across a busy tawa station.
-   */
+  /** Double-HEIGHT (taller). SP742 = ESC h n; ESC/POS = GS ! height bit. */
   tall(on: boolean): this {
     return this.mode === "starline"
-      ? this.raw(ESC, 0x69, on ? 1 : 0, 0) // Star Line: ESC i height=1 width=0
+      ? this.raw(ESC, 0x68, on ? 1 : 0) // Star Line dot-impact: ESC h n
       : this.raw(GS, 0x21, on ? 0x01 : 0x00); // ESC/POS: GS ! double-height
+  }
+
+  /** Double-WIDTH (wider). SP742 = ESC W n; ESC/POS = GS ! width bit. */
+  wide(on: boolean): this {
+    return this.mode === "starline"
+      ? this.raw(ESC, 0x57, on ? 1 : 0) // Star Line dot-impact: ESC W n
+      : this.raw(GS, 0x21, on ? 0x20 : 0x00); // ESC/POS: GS ! double-width
+  }
+
+  /**
+   * Print one line at a given style, then reset and feed. Centralizes the
+   * on/off bracketing so we never leak a style into the next line.
+   */
+  styled(
+    s: string,
+    o: { tall?: boolean; wide?: boolean; bold?: boolean; red?: boolean } = {}
+  ): this {
+    if (o.red) this.red(true);
+    if (o.bold) this.bold(true);
+    if (o.tall) this.tall(true);
+    if (o.wide) this.wide(true);
+    this.text(s);
+    if (o.wide) this.wide(false);
+    if (o.tall) this.tall(false);
+    if (o.bold) this.bold(false);
+    if (o.red) this.red(false);
+    return this.feed();
   }
 
   /** Feed and partial-cut. No-op on printers without a cutter (e.g. SP742). */
@@ -162,43 +209,55 @@ export function renderTicket(
   const p = new Printout(mode);
   const t = (s: string) => sanitizeForPrinter(s);
 
+  // Style tiers (tuned on the real SP742):
+  //   BIG  = tall + wide + bold ("font H") — the cook's action items.
+  //   SUB  = tall + bold — readable, but no double-width so long lines
+  //          (timestamp, dividers, footer) don't wrap off the 3" paper.
+  const BIG = { tall: true, wide: true, bold: true };
+  const SUB = { tall: true, bold: true };
+
   p.init();
 
-  // Big centered table id (double width + height — the biggest thing on paper).
-  p.align(1).bigOn().text(t(ticket.tableId)).feed().bigOff().align(0);
-
-  // Everything below prints double-height so the whole ticket is readable from
-  // across the kitchen, not just the table id.
-  p.tall(true);
+  // Table id — the biggest thing on the slip, printed in RED (2-color ribbon).
+  p.styled(t(ticket.tableId), { ...BIG, red: true });
 
   // Timestamp + order id row.
-  p.text(formatTime(ticket.createdAt));
-  if (ticket.orderId) p.text("   #" + ticket.orderId.slice(0, 6));
-  p.feed().text(DIVIDER).feed();
+  let head = formatTime(ticket.createdAt);
+  if (ticket.orderId) head += "   #" + ticket.orderId.slice(0, 6);
+  p.styled(head, SUB);
+  p.styled(DIVIDER, SUB);
 
   // Customer note (Jain, allergies, etc.).
   if (ticket.customerNote) {
-    p.bold(true).text(t("NOTE: " + ticket.customerNote)).bold(false).feed();
-    p.text(DIVIDER).feed();
+    p.styled(t("NOTE: " + ticket.customerNote), SUB);
+    p.styled(DIVIDER, SUB);
   }
 
-  // Line items — the qty × name line is always bold (the part the cook acts on).
+  // Line items — qty × name at BIG (font H) when it fits the double-width
+  // line, else tall+bold so long names stay on one line. Sub-lines at SUB.
   for (const line of ticket.lines) {
-    p.bold(true).text(t(`${line.qty} x ${line.name}`)).bold(false).feed();
+    const label = t(`${line.qty} x ${line.name}`);
+    p.styled(label, label.length <= WIDE_COLS ? BIG : SUB);
     if (line.notes) {
-      for (const n of line.notes) p.text(t("    " + n)).feed();
+      for (const n of line.notes) p.styled(t("    " + n), SUB);
     }
   }
 
-  // Footer.
-  if (ticket.footer) {
-    p.feed().text(DIVIDER).feed();
-    p.bold(true).text(t(ticket.footer)).bold(false).feed();
+  // Buffet total — big, so the cook sees the count at a glance.
+  if (ticket.total != null) {
+    p.styled(DIVIDER, SUB);
+    p.styled(`${ticket.total} Dosas`, BIG);
   }
 
-  // Back to normal size, then feed + cut.
-  p.tall(false);
-  p.feed(4).cut();
+  // Footer (e.g. the TEST marker).
+  if (ticket.footer) {
+    p.styled(DIVIDER, SUB);
+    p.styled(t(ticket.footer), SUB);
+  }
+
+  // Minimal feed + cut — the cut command itself advances paper to the cutter,
+  // so one line is enough. Keeps slips short (no wasted paper top or bottom).
+  p.feed(1).cut();
 
   return p.bytes();
 }
@@ -208,11 +267,15 @@ export function renderTicket(
 export interface PreviewLine {
   text: string;
   bold?: boolean;
-  /** Rendered larger + centered (the table header — double width + height). */
+  /** Rendered larger (the table header — double width + height). */
   big?: boolean;
   center?: boolean;
-  /** Double-height body line (matches renderTicket's tall() body). */
+  /** Double-height line (SUB tier). */
   tall?: boolean;
+  /** Double-width too (BIG / "font H" — table id + item lines). */
+  wide?: boolean;
+  /** Printed in red on the 2-color ribbon (table id). */
+  red?: boolean;
 }
 
 /**
@@ -225,29 +288,37 @@ export function previewTicket(ticket: Ticket): PreviewLine[] {
   const t = (s: string) => sanitizeForPrinter(s);
   const out: PreviewLine[] = [];
 
-  out.push({ text: t(ticket.tableId), big: true, center: true });
+  // Mirrors renderTicket's two tiers: BIG (tall+wide+bold) for the table id and
+  // item lines, SUB (tall+bold) for everything else.
+  const BIG = { bold: true, tall: true, wide: true } as const;
+  const SUB = { bold: true, tall: true } as const;
 
-  // Everything below the header prints double-height (tall) — mirrors
-  // renderTicket so the preview shows the real, readable-from-across-the-room size.
+  out.push({ text: t(ticket.tableId), big: true, red: true, ...BIG });
+
   let head = formatTime(ticket.createdAt);
   if (ticket.orderId) head += "   #" + ticket.orderId.slice(0, 6);
-  out.push({ text: head, tall: true });
-  out.push({ text: DIVIDER, tall: true });
+  out.push({ text: head, ...SUB });
+  out.push({ text: DIVIDER, ...SUB });
 
   if (ticket.customerNote) {
-    out.push({ text: t("NOTE: " + ticket.customerNote), bold: true, tall: true });
-    out.push({ text: DIVIDER, tall: true });
+    out.push({ text: t("NOTE: " + ticket.customerNote), ...SUB });
+    out.push({ text: DIVIDER, ...SUB });
   }
 
   for (const line of ticket.lines) {
-    out.push({ text: t(`${line.qty} x ${line.name}`), bold: true, tall: true });
-    if (line.notes)
-      for (const n of line.notes) out.push({ text: t("    " + n), tall: true });
+    const label = t(`${line.qty} x ${line.name}`);
+    out.push({ text: label, ...(label.length <= WIDE_COLS ? BIG : SUB) });
+    if (line.notes) for (const n of line.notes) out.push({ text: t("    " + n), ...SUB });
+  }
+
+  if (ticket.total != null) {
+    out.push({ text: DIVIDER, ...SUB });
+    out.push({ text: `${ticket.total} Dosas`, ...BIG });
   }
 
   if (ticket.footer) {
-    out.push({ text: DIVIDER, tall: true });
-    out.push({ text: t(ticket.footer), bold: true, tall: true });
+    out.push({ text: DIVIDER, ...SUB });
+    out.push({ text: t(ticket.footer), ...SUB });
   }
 
   return out;
@@ -267,6 +338,19 @@ export function sampleTicket(): Ticket {
     ],
     footer: "*** TEST ORDER — DO NOT MAKE ***",
   };
+}
+
+/**
+ * Short code for a buffet dosa = initials of each word, uppercased.
+ *   "Sada Dosa" → "SD"   "Masala Dosa" → "MD"
+ *   "Mysore Sada Dosa" → "MSD"   "Mysore Masala Dosa" → "MMD"
+ * Keeps weekend lines short enough to print at full font H without shrinking.
+ */
+export function dosaCode(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 // ─────────── conversions from app types ───────────
@@ -290,7 +374,32 @@ export function orderToTicket(opts: {
     masala_on_side?: boolean;
   }>;
   footer?: string;
+  /**
+   * Saturday/Sunday breakfast buffet. There's no customization on weekends, so
+   * the ticket is just the dosa counts per table: NO customer note, NO
+   * modifier lines, the redundant " Dosa" suffix dropped so long names fit one
+   * line, and a big total at the bottom.
+   */
+  buffet?: boolean;
 }): Ticket {
+  if (opts.buffet) {
+    const total = opts.items.reduce((n, i) => n + i.quantity, 0);
+    return {
+      tableId: opts.tableId,
+      orderId: opts.orderId,
+      createdAt: new Date(opts.createdAt),
+      footer: opts.footer, // e.g. TEST marker; otherwise undefined
+      total,
+      lines: opts.items.map((i) => ({
+        qty: i.quantity,
+        // Short code so the line stays at full font H, no shrinking:
+        //   Sada Dosa→SD, Masala Dosa→MD, Mysore Sada Dosa→MSD,
+        //   Mysore Masala Dosa→MMD. (initials of each word).
+        name: dosaCode(i.name),
+      })),
+    };
+  }
+
   return {
     tableId: opts.tableId,
     orderId: opts.orderId,
