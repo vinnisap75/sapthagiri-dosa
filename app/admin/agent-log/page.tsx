@@ -28,7 +28,6 @@ const AGENT_COLORS: Record<string, { bg: string; fg: string; emoji: string }> = 
   orchestrator:       { bg: "bg-sapthagiri-burgundy", fg: "text-white",        emoji: "🎯" },
   sentry:             { bg: "bg-red-700",             fg: "text-white",        emoji: "🛡" },
   custodian:          { bg: "bg-purple-700",          fg: "text-white",        emoji: "🧐" },
-  hammer:             { bg: "bg-emerald-700",         fg: "text-white",        emoji: "🔨" },
   "service-architect":{ bg: "bg-blue-700",            fg: "text-white",        emoji: "🏗" },
   tava:               { bg: "bg-amber-700",           fg: "text-white",        emoji: "🍳" },
   patron:             { bg: "bg-pink-700",            fg: "text-white",        emoji: "🙇" },

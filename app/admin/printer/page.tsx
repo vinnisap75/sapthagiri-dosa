@@ -29,6 +29,9 @@ function PrinterAdmin() {
   const [host, setHost] = useState("");
   const [port, setPort] = useState<string>("80");
   const [label, setLabel] = useState<string>("Kitchen printer");
+  const [autoPrint, setAutoPrint] = useState<boolean>(false);
+  const [autoPrintScope, setAutoPrintScope] =
+    useState<"all" | "sat-sun-only" | "wed-only">("all");
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -44,6 +47,8 @@ function PrinterAdmin() {
       setHost(saved.host);
       setPort(String(saved.port ?? 80));
       setLabel(saved.label ?? "Kitchen printer");
+      setAutoPrint(saved.autoPrint ?? false);
+      setAutoPrintScope(saved.autoPrintScope ?? "all");
     }
     setHydrated(true);
   }, []);
@@ -58,6 +63,8 @@ function PrinterAdmin() {
       host: host.trim(),
       port: port ? parseInt(port, 10) : undefined,
       label: label.trim() || undefined,
+      autoPrint,
+      autoPrintScope,
     };
     savePrinterConfig(next);
     setCfg(next);
@@ -209,6 +216,58 @@ function PrinterAdmin() {
                 className="w-full border rounded-lg px-3 py-2"
               />
             </label>
+
+            {/* Auto-print toggle + service scope. */}
+            <div className="border-t border-stone-200 pt-3 mt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={autoPrint}
+                  onChange={(e) => setAutoPrint(e.target.checked)}
+                  className="w-5 h-5 accent-sapthagiri-burgundy"
+                />
+                <span className="text-sm">
+                  <strong>Auto-print incoming orders.</strong> Every new
+                  order on the kitchen board fires a ticket.
+                </span>
+              </label>
+              {autoPrint && (
+                <div className="mt-2 ml-7">
+                  <div className="text-xs uppercase tracking-wider text-stone-500 mb-1">
+                    Auto-print for
+                  </div>
+                  <select
+                    value={autoPrintScope}
+                    onChange={(e) =>
+                      setAutoPrintScope(e.target.value as typeof autoPrintScope)
+                    }
+                    className="text-sm border rounded-lg px-3 py-2 w-full max-w-xs"
+                  >
+                    <option value="all">All services (Wed + Sat + Sun)</option>
+                    <option value="sat-sun-only">
+                      Sat &amp; Sun breakfast only
+                    </option>
+                    <option value="wed-only">Wednesday dinner only</option>
+                  </select>
+                  <p className="text-xs text-stone-500 mt-1">
+                    Test orders (
+                    <code>is_test=true</code>) always print so you can dry-run.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Mixed-content warning. */}
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 leading-relaxed">
+              <strong>⚠ Mixed-content gotcha:</strong> the deployed app runs
+              over <code>https://</code> but thermal printers speak{" "}
+              <code>http://</code>. Chrome blocks that by default. On the
+              kitchen tablet either (a) open this app over{" "}
+              <code>http://sapthagiribuffet.vercel.app</code> if Vercel allows
+              it, (b) tap the lock icon → Site settings → set "Insecure
+              content" to Allow, or (c) put the kitchen tablet on a tiny LAN
+              proxy. Once the test prints, you're past this.
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-2">

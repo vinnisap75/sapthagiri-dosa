@@ -5,11 +5,11 @@
 #   scripts/agent/log.sh <agent> <phase> <message> [payload-json]
 #
 # Examples:
-#   scripts/agent/log.sh hammer starting "Implementing issue #2"
-#   scripts/agent/log.sh hammer note "Found shared localStorage util" \
-#       '{"files":["app/kitchen/page.tsx"]}'
-#   scripts/agent/log.sh hammer finishing "PR #3 opened" \
-#       '{"pr":3,"handoff_to":"custodian"}'
+#   scripts/agent/log.sh orchestrator starting "Kicking off Saturday buffet prep"
+#   scripts/agent/log.sh sentry note "3 P0 / 4 P1 open" \
+#       '{"p0":3,"p1":4}'
+#   scripts/agent/log.sh orchestrator finishing "Floor ready" \
+#       '{"handoff_to":"custodian"}'
 #
 # Env (loaded from ~/.sapthagiri/env or process env):
 #   SUPABASE_URL
@@ -23,7 +23,7 @@ CONFIG="$HOME/.sapthagiri/env"
 : "${SUPABASE_URL:?SUPABASE_URL not set in env or ~/.sapthagiri/env}"
 : "${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY not set}"
 
-AGENT="${1:?agent slug required, e.g. hammer}"
+AGENT="${1:?agent slug required, e.g. orchestrator}"
 PHASE="${2:?phase required: starting|note|blocked|finishing}"
 MESSAGE="${3:?message required}"
 PAYLOAD_JSON="${4:-null}"

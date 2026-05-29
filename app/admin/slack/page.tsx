@@ -146,7 +146,7 @@ function SlackAdmin() {
             <code> #sapthagiri-floor </code> recommended. The fan-out is a
             Postgres trigger that fires on every <code>agent_log</code>
             insert, so it works whether the message was written from the
-            app, a cron, or a local Hammer run.
+            app, a cron, or any agent run.
           </p>
         </div>
 

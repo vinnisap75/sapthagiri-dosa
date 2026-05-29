@@ -203,12 +203,11 @@ step "10. Label the open Issues"
 # ──────────────────────────────────────────────────────────────
 gh label create "priority:p0" --color B60205 --description "Ship before next service" --force >/dev/null 2>&1 || true
 gh label create "priority:p1" --color D93F0B --description "Ship this week"             --force >/dev/null 2>&1 || true
-gh label create "agent:hammer" --color 0E8A16 --description "For the code-writing agent (Copilot Cloud Agent when available)" --force >/dev/null 2>&1 || true
 gh label create "agent:custodian" --color 5319E7 --description "For the PR review agent" --force >/dev/null 2>&1 || true
 ok "labels exist"
 
-gh issue edit 1 --add-label "priority:p0,agent:hammer" >/dev/null 2>&1 || warn "labeling issue #1 failed"
-gh issue edit 2 --add-label "priority:p1,agent:hammer" >/dev/null 2>&1 || warn "labeling issue #2 failed"
+gh issue edit 1 --add-label "priority:p0" >/dev/null 2>&1 || warn "labeling issue #1 failed"
+gh issue edit 2 --add-label "priority:p1" >/dev/null 2>&1 || warn "labeling issue #2 failed"
 ok "issues #1 and #2 labeled"
 
 # ──────────────────────────────────────────────────────────────
@@ -235,7 +234,6 @@ echo
 echo "    1. Check the PR Custodian-style: gh pr checks"
 echo "    2. Merge it:                     gh pr merge --squash --delete-branch"
 echo "    3. Vercel auto-deploys.          Test on phone: scan a QR, verify status page loads."
-echo "    4. If Copilot Cloud Agent is on your plan, assign it to Issue #2 for the kitchen UI."
 echo
 echo "  All agent activity logs live in Supabase table public.agent_log."
 echo "  All iMessage pings queue into public.notifications."

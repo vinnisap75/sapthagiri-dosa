@@ -63,7 +63,6 @@ language sql immutable as $$
     when 'orchestrator'       then ':dart:'
     when 'sentry'             then ':shield:'
     when 'custodian'          then ':face_with_monocle:'
-    when 'hammer'             then ':hammer:'
     when 'service-architect'  then ':building_construction:'
     when 'tava'               then ':fried_egg:'
     when 'patron'             then ':bowing_man:'
