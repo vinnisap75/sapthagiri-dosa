@@ -9,6 +9,7 @@ import {
   SERVICES,
   LIMITED_MENU_IDS,
   getActiveService,
+  getNextService,
   getJustClosedService,
   formatServiceHours,
   serviceDayName,
@@ -352,16 +353,25 @@ function OrderInner() {
     );
   }
 
-  // Pick the visible menu based on the active service.  Preview / staff
-  // bypass with no real service active defaults to the full menu.
-  const visibleMenu =
-    activeService && activeService.menu === "limited"
-      ? MENU.filter((m) => LIMITED_MENU_IDS.includes(m.id))
-      : MENU;
-  const showRavaDosaCard = activeService ? activeService.showRavaDosaButton : true;
+  // Which service's menu to render. A real customer only reaches this code
+  // during a live service. Staff/preview bypass with no live service falls
+  // back to the NEXT upcoming service, so a mid-week staff preview shows (e.g.)
+  // Saturday's limited menu rather than defaulting to the full menu.
+  const liveService = getActiveService();
+  const displayService = activeService ?? getNextService();
+  const isPreview = forcedService !== null || liveService === null;
+
+  const isLimited = displayService.menu === "limited";
+  const visibleMenu = isLimited
+    ? MENU.filter((m) => LIMITED_MENU_IDS.includes(m.id))
+    : MENU;
+  const showRavaDosaCard = displayService.showRavaDosaButton;
   // Sat/Sun breakfast buffet doesn't run separate Jain masala — hide the
   // "no onion, no garlic" toggle entirely on those services.
-  const allowJainModifier = activeService ? activeService.allowJainModifier : true;
+  const allowJainModifier = displayService.allowJainModifier;
+  // Limited (buffet) service = no per-item customization at all; guests can
+  // only add or subtract quantity.
+  const allowCustomization = !isLimited;
 
   const dosas = visibleMenu.filter((m) => m.category === "dosa" && !m.isCustomizable);
   const uttapams = visibleMenu.filter((m) => m.category === "uttapam" && !m.isCustomizable);
@@ -399,6 +409,17 @@ function OrderInner() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-6">
+        {/* Staff/preview hint — shown when this isn't a live customer session
+            (logged-in staff mid-week, ?preview=1, or a forced ?service=). */}
+        {isPreview && (
+          <div className="rounded-lg bg-sapthagiri-burgundy/10 border border-sapthagiri-burgundy/30 px-3 py-2 text-xs text-sapthagiri-burgundy">
+            <strong>Staff preview</strong> — showing the{" "}
+            {serviceDayName(displayService)} {displayService.name} menu
+            {isLimited ? " (limited · add/subtract only)" : " (full menu)"}.
+            Guests see this only during service hours.
+          </div>
+        )}
+
         {/* Rava Dosa — not on the digital menu, customer summons a server.
             Only shown during services that offer Rava Dosa (Wed night). */}
         {showRavaDosaCard && (
@@ -503,6 +524,7 @@ function OrderInner() {
                 onSetCrispiness={setLineCrispiness}
                 onSetCookMedium={setLineCookMedium}
                 allowJainModifier={allowJainModifier}
+                allowCustomization={allowCustomization}
               />
             ))}
           </Section>
@@ -521,6 +543,7 @@ function OrderInner() {
                 onSetCrispiness={setLineCrispiness}
                 onSetCookMedium={setLineCookMedium}
                 allowJainModifier={allowJainModifier}
+                allowCustomization={allowCustomization}
               />
             ))}
           </Section>
@@ -666,6 +689,7 @@ function FixedItemRow({
   onSetCrispiness,
   onSetCookMedium,
   allowJainModifier = true,
+  allowCustomization = true,
 }: {
   item: MenuItem;
   line?: Line;
@@ -675,6 +699,8 @@ function FixedItemRow({
   onSetCrispiness: (lineId: string, value: "crispy" | "soft") => void;
   onSetCookMedium: (lineId: string, value: "ghee" | "oil") => void;
   allowJainModifier?: boolean;
+  /** When false (buffet service) hide ALL per-item options — add/subtract only. */
+  allowCustomization?: boolean;
 }) {
   const qty = line?.qty ?? 0;
   return (
@@ -710,7 +736,7 @@ function FixedItemRow({
           </button>
         </div>
       </div>
-      {line && line.qty > 0 && (
+      {allowCustomization && line && line.qty > 0 && (
         <>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <PillToggle
@@ -738,7 +764,7 @@ function FixedItemRow({
           </div>
         </>
       )}
-      {line && line.qty > 0 && item.hasMasalaFilling && (
+      {allowCustomization && line && line.qty > 0 && item.hasMasalaFilling && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
             type="checkbox"
@@ -752,7 +778,7 @@ function FixedItemRow({
           </span>
         </label>
       )}
-      {line && line.qty > 0 && item.hasMasalaFilling && allowJainModifier && (
+      {allowCustomization && line && line.qty > 0 && item.hasMasalaFilling && allowJainModifier && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
             type="checkbox"
