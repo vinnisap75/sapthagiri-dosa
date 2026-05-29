@@ -28,6 +28,14 @@ export interface PrinterConfig {
   port?: number;
   /** Friendly label shown in the admin UI. */
   label?: string;
+  /** When true, kitchen page fires a print for every NEW order it sees. */
+  autoPrint?: boolean;
+  /** Which services trigger auto-print:
+   *   - "all":          every service (Wed, Sat, Sun)
+   *   - "sat-sun-only": breakfast buffet only (Sree's most common use)
+   *   - "wed-only":     Wednesday dinner only
+   *  Defaults to "all" when undefined. */
+  autoPrintScope?: "all" | "sat-sun-only" | "wed-only";
 }
 
 export interface TicketLine {
@@ -241,28 +249,31 @@ async function doPost(
 ): Promise<PrintResult> {
   const start = performance.now();
   try {
-    const res = await fetch(url, {
+    // mode: "no-cors" — thermal printers don't return CORS headers, so we
+    // fire-and-forget. The response will be opaque (we can't read it), but
+    // a successful fetch() that doesn't throw means the printer accepted
+    // the bytes at the TCP level. Any throw = network unreachable, mixed
+    // content blocked, etc.
+    await fetch(url, {
       method: "POST",
       headers: { "Content-Type": contentType },
       body: body as BodyInit,
-      // Same-LAN printers don't speak HTTPS — keep this http and accept it.
-      mode: "cors",
+      mode: "no-cors",
     });
     const ms = Math.round(performance.now() - start);
-    if (!res.ok) {
-      return { ok: false, error: `HTTP ${res.status}`, ms };
-    }
     return { ok: true, ms };
   } catch (e) {
     const ms = Math.round(performance.now() - start);
-    return {
-      ok: false,
-      error:
-        e instanceof Error
-          ? e.message
-          : "Network error — is the printer on the same WiFi?",
-      ms,
-    };
+    const msg = e instanceof Error ? e.message : String(e);
+    let friendly = msg;
+    if (/mixed content|blocked.*http/i.test(msg)) {
+      friendly =
+        "Browser blocked HTTP→HTTPS mixed content. Open this page over http:// " +
+        "on the kitchen tablet, OR allow insecure content for this site in Chrome settings.";
+    } else if (/Failed to fetch|NetworkError/i.test(msg)) {
+      friendly = "Network error — printer offline, wrong IP, or different WiFi?";
+    }
+    return { ok: false, error: friendly, ms };
   }
 }
 

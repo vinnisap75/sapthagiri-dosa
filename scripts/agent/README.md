@@ -1,6 +1,7 @@
 # Sapthagiri local agents
 
-> Comms-first. Mac stays plugged in + awake; everything else is wired.
+> Comms-first. Agents coordinate by writing to the shared `agent_log`
+> table; the dashboard (`/admin/agent-log`) and Slack mirror it live.
 
 ## What's in here
 
@@ -8,9 +9,11 @@
 |---|---|
 | `log.sh` | Bash helper: write one row to `agent_log` via RPC. |
 | `context.sh` | Bash helper: fetch last N `agent_log` rows formatted for a prompt. |
-| `run-hammer.mjs` | The autonomous code agent. Picks one open `agent:hammer` Issue, edits files via Anthropic API tool use, commits, pushes, opens a PR, posts to `agent_log`. |
-| `loop.sh` | `caffeinate`-wrapped loop that runs Hammer every 5 min. |
 | `README.md` | This file. |
+
+There is no local code-writing agent. Humans write and review all code;
+the agents here are coordination/comms only — they post status to
+`agent_log`, which fans out to the dashboard and Slack.
 
 ## One-time setup
 
@@ -20,92 +23,34 @@
 
    ```sh
    SUPABASE_URL=https://upxgcpkatrcejicailmp.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=eyJ...          # from Supabase → Settings → API
-   ANTHROPIC_API_KEY=sk-ant-...              # from console.anthropic.com
-   GITHUB_REPO=vinnisap75/sapthagiri-dosa
-   # GITHUB_PAT optional — falls back to `gh auth token`
+   SUPABASE_SERVICE_ROLE_KEY=sb_secret_...   # Supabase → Settings → API keys
    IMESSAGE_RECIPIENT=+1XXXXXXXXXX           # for the iMessage daemon
    ```
 
-3. Confirm `gh auth status` is signed in (`gh auth login` if not).
-4. Confirm `node --version` ≥ 18.
-
-## Running tonight
-
-Open Terminal, leave window visible:
+## Writing to the log
 
 ```sh
-cd ~/Documents/Sapthagiri/Dosa
-bash scripts/agent/loop.sh
+scripts/agent/log.sh orchestrator starting "Saturday buffet prep"
+scripts/agent/log.sh sentry note "3 P0 / 4 P1 open" '{"p0":3,"p1":4}'
+scripts/agent/log.sh orchestrator finishing "Floor ready" '{"handoff_to":"custodian"}'
 ```
 
-That's it. It will:
+Valid phases: `starting | note | blocked | finishing`. Valid agent slugs
+live in `lib/agent-comms.ts` (`AGENT_SLUGS`).
 
-- Keep your Mac awake with `caffeinate` (no display sleep, no system sleep)
-- Every 5 minutes, run Hammer
-- Hammer picks the highest-priority open Issue labeled `agent:hammer`
-- Hammer reads the repo, edits files, commits to `feat/...`, pushes, opens a PR
-- All activity logged to `agent_log`
-- Output streamed to `~/.sapthagiri/agent-loop.log`
-
-In the morning, scan the log + the PRs.
-
-## Detached / background mode
-
-If you want to close the terminal window:
+## Reading the log
 
 ```sh
-nohup bash scripts/agent/loop.sh > ~/.sapthagiri/agent-loop.log 2>&1 &
-```
-
-Stop with:
-
-```sh
-pkill -f scripts/agent/loop.sh
-```
-
-## Safety rules baked in
-
-- Hammer NEVER pushes to `main` (always feature branch + PR; branch
-  protection on `main` enforces this even if it tried).
-- Hammer cannot touch `.git/`, `.env*`, `node_modules/`, `.next/`, or
-  existing files under `supabase/migrations/`.
-- Every commit includes `Co-Authored-By: sreec22 <sreec22@users.noreply.github.com>`.
-- Every run writes `starting` → `note`*N* → `finishing` rows to
-  `agent_log` per the protocol in
-  `.agent-org/agents/PROTOCOL.md`.
-- Hammer refuses to start if there are uncommitted changes in the
-  working tree.
-
-## Debugging
-
-```sh
-# See the seeded smoke-test history + everything Hammer has logged
+# Last 50 rows, formatted as a <recent_agent_log> block for a prompt
 bash scripts/agent/context.sh 50
-
-# Manually trigger one Hammer run (no loop)
-node scripts/agent/run-hammer.mjs
-
-# Try a specific issue (e.g. #2)
-node scripts/agent/run-hammer.mjs --issue 2
-
-# Plan-only (no commits, no PR) — great for verifying the prompt is right
-node scripts/agent/run-hammer.mjs --issue 2 --dry
-
-# Tail the loop log
-tail -f ~/.sapthagiri/agent-loop.log
 ```
 
-## Costs
+## Where the messages go
 
-Anthropic API tokens. A typical Hammer run for a small issue (~5 file
-reads, ~3 edits, one PR) is roughly $0.10–$0.30 with Sonnet. Five runs
-overnight is ~$1–$2. Cap with `MAX_TOOL_ROUNDS = 30` in
-`run-hammer.mjs` if a run goes off the rails.
+Every `agent_log` insert is mirrored to:
 
-## Who watches the watcher
+- the live dashboard at `/admin/agent-log` (Supabase Realtime), and
+- Slack `#sapthagiri-floor` (see `/admin/slack` to wire the webhook, or
+  the Slack connector).
 
-Future work: Custodian local runner (`scripts/agent/run-custodian.mjs`)
-that polls open PRs Hammer opens, runs the regression checks, posts a
-review. For tonight Hammer-only is enough — you review the PRs
-yourself in the morning.
+See `.agent-org/agents/PROTOCOL.md` for the wire protocol.

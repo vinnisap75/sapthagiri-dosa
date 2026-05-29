@@ -32,7 +32,13 @@ function Stats() {
       try {
         const [{ data: ordRows, error: oerr }, { data: callRows }] =
           await Promise.all([
-            sb.from("orders").select("*, order_items(*)").order("created_at"),
+            // Analytics MUST ignore test orders (is_test=true) so Sree's
+            // practice runs don't pollute Wednesday's numbers.
+            sb
+              .from("orders")
+              .select("*, order_items(*)")
+              .eq("is_test", false)
+              .order("created_at"),
             sb.from("server_calls").select("*"),
           ]);
         if (oerr) throw oerr;

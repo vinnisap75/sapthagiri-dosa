@@ -12,6 +12,12 @@ import {
 import { AuthGuard, SignOutButton } from "../_components/AuthGuard";
 import { MENU_BY_ID, ADDONS_BY_ID } from "@/lib/menu";
 import { getActiveService } from "@/lib/services";
+import {
+  loadPrinterConfig,
+  printTicket,
+  orderToTicket,
+  PrinterConfig,
+} from "@/lib/printer";
 
 interface FullOrder {
   order: OrderRow;
@@ -163,8 +169,12 @@ function KitchenInner() {
 
   // Track which order IDs we've already announced so we only chime on truly new ones.
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
+  // Track which order IDs we've already PRINTED so we don't double-fire if
+  // an order gets re-fetched (e.g. realtime echo + initial load race).
+  const printedOrderIdsRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
   const chimeMp3Ref = useRef<HTMLAudioElement | null>(null);
+  const printerCfgRef = useRef<PrinterConfig | null>(null);
 
   // Cooking Mode — which physical station has the tablet right now.
   // Persisted to localStorage so a refresh doesn't reset.
@@ -221,6 +231,51 @@ function KitchenInner() {
       /* ignore — synthesis fallback handles it */
     }
   }, []);
+
+  // Load the printer config once on mount + refresh it any time the admin
+  // page might have saved it (storage event from another tab).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    printerCfgRef.current = loadPrinterConfig();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "sapthagiri-printer-config") {
+        printerCfgRef.current = loadPrinterConfig();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  /** Decide whether the current service is in the auto-print scope. */
+  function autoPrintApplies(cfg: PrinterConfig | null): boolean {
+    if (!cfg || !cfg.autoPrint) return false;
+    const scope = cfg.autoPrintScope ?? "all";
+    if (scope === "all") return true;
+    const svc = getActiveService();
+    if (!svc) return true; // off-hours → assume staff is testing, print
+    if (scope === "sat-sun-only") return svc.id !== "wednesday";
+    if (scope === "wed-only") return svc.id === "wednesday";
+    return true;
+  }
+
+  /** Print one order through the configured printer. Used both for
+   *  auto-print (called from the order-loader) and the manual button on
+   *  each card. Returns a result so the card can show success/failure. */
+  async function printOneOrder(full: FullOrder) {
+    const cfg = printerCfgRef.current;
+    if (!cfg) {
+      return { ok: false, error: "No printer paired. Go to /admin/printer." };
+    }
+    const ticket = orderToTicket({
+      tableId: full.order.table_id,
+      orderId: full.order.id,
+      createdAt: full.order.created_at,
+      notes: full.order.notes,
+      items: full.items,
+      footer: full.order.is_test ? "*** TEST ORDER — DO NOT MAKE ***" : undefined,
+    });
+    return printTicket(ticket);
+  }
 
   // On mount: read the persisted preference. If it was on, ALSO arm a
   // one-time global gesture listener that silently constructs the
@@ -338,6 +393,25 @@ function KitchenInner() {
           audioCtxRef.current
         ) {
           playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
+        }
+
+        // Auto-print: for each newly-arrived active order that matches the
+        // scope, fire a print. Skip if printer not paired, scope mismatch,
+        // or we've already printed this id.
+        if (prevSize > 0 && newActiveIds.length > 0) {
+          const cfg = printerCfgRef.current;
+          if (autoPrintApplies(cfg)) {
+            for (const newId of newActiveIds) {
+              if (printedOrderIdsRef.current.has(newId)) continue;
+              const row = rows.find((r) => r.id === newId);
+              if (!row) continue;
+              printedOrderIdsRef.current.add(newId);
+              printOneOrder({
+                order: row as OrderRow,
+                items: (row.order_items ?? []) as OrderItemRow[],
+              }).catch(() => {/* swallow — operator will see in manual test */});
+            }
+          }
         }
 
         setOrders(
@@ -747,6 +821,7 @@ function KitchenInner() {
                 queueAll={active}
                 onSetStatus={setStatus}
                 onCycleItem={(item) => cycleItemState(o, item)}
+                onPrint={printOneOrder}
               />
             ))}
           </div>
@@ -968,13 +1043,29 @@ function OrderCard({
   queueAll,
   onSetStatus,
   onCycleItem,
+  onPrint,
 }: {
   full: FullOrder;
   now: Date;
   queueAll: FullOrder[];
   onSetStatus: (o: OrderRow, s: OrderRow["status"]) => void;
   onCycleItem: (item: OrderItemRow) => void;
+  onPrint?: (full: FullOrder) => Promise<{ ok: boolean; error?: string }>;
 }) {
+  // Manual print state (shows transient feedback on the button).
+  const [printState, setPrintState] = useState<
+    "idle" | "sending" | "ok" | "err"
+  >("idle");
+  const [printErr, setPrintErr] = useState<string | null>(null);
+  async function handlePrint() {
+    if (!onPrint) return;
+    setPrintState("sending");
+    setPrintErr(null);
+    const r = await onPrint(full);
+    setPrintState(r.ok ? "ok" : "err");
+    if (!r.ok) setPrintErr(r.error ?? "Print failed.");
+    setTimeout(() => setPrintState("idle"), r.ok ? 2000 : 4000);
+  }
   const { order, items } = full;
   const doneCount = items.filter((i) => i.is_done).length;
   const cookMins = orderCookMinutes(
@@ -1252,6 +1343,30 @@ function OrderCard({
             className="flex-1 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold py-3 text-sm transition"
           >
             ✓ Mark served
+          </button>
+        )}
+        {onPrint && (
+          <button
+            onClick={handlePrint}
+            disabled={printState === "sending"}
+            className={`rounded-xl border py-3 px-3 text-sm transition ${
+              printState === "ok"
+                ? "bg-green-50 border-green-300 text-green-700"
+                : printState === "err"
+                ? "bg-red-50 border-red-300 text-red-700"
+                : "border-stone-300 text-stone-700 hover:bg-stone-100"
+            }`}
+            title={
+              printErr ?? "Print this ticket to the kitchen printer"
+            }
+          >
+            {printState === "sending"
+              ? "…"
+              : printState === "ok"
+              ? "🖨 ✓"
+              : printState === "err"
+              ? "🖨 ✕"
+              : "🖨"}
           </button>
         )}
         <button
