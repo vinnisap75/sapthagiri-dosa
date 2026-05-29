@@ -24,7 +24,6 @@ export const AGENT_SLUGS = [
   "orchestrator",
   "sentry",
   "service-architect",
-  "hammer",
   "custodian",
   "tava",
   "patron",
@@ -100,12 +99,12 @@ export async function recentEvents(
 
 /**
  * Convenience helper for the common pattern:
- *   const tx = beginAgentRun({ agent: "hammer", task_id: "issue-2" });
- *   await tx.start("Implementing cooking-mode toggle");
+ *   const tx = beginAgentRun({ agent: "service-architect", task_id: "menu-config" });
+ *   await tx.start("Adding Sunday buffet service window");
  *   ...do work...
- *   await tx.note("Found existing localStorage util to reuse");
+ *   await tx.note("Reusing the limited-menu id list");
  *   ...
- *   await tx.finish("PR #3 opened", { pr: 3, handoff_to: "custodian" });
+ *   await tx.finish("Service window live", { handoff_to: "custodian" });
  */
 export function beginAgentRun(opts: {
   agent: AgentSlug;

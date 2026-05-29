@@ -3,7 +3,7 @@
 # Every PR to main requires review from at least one of the listed owners.
 # Combined with the branch-protection rule "Require review from Code Owners",
 # this means nothing merges to main without a sreec22 or vinnisap75 sign-off
-# even if Copilot Cloud Agent or another bot opened it.
+# even if a bot opened it.
 
 # Global owners — catch-all for any path not matched below.
 *                       @vinnisap75 @sreec22
