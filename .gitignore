@@ -4,6 +4,8 @@ out/
 .env*.local
 # Print-daemon secret (Supabase service-role key) — never commit.
 scripts/print-daemon/printer.env
+scripts/print-daemon/standalone/printer.env
+scripts/print-daemon/standalone/node_modules/
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts

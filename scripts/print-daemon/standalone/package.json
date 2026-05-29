@@ -1,0 +1,13 @@
+{
+  "name": "sapthagiri-print-daemon",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone kitchen print daemon (Termux/Pi/laptop) — one dependency.",
+  "scripts": {
+    "start": "node daemon.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  }
+}

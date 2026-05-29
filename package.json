@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "bridge": "node scripts/print-bridge/server.mjs",
-    "daemon": "tsx scripts/print-daemon/daemon.mts"
+    "daemon": "tsx scripts/print-daemon/daemon.mts",
+    "build:daemon": "tsc lib/ticket.ts lib/services.ts --outDir scripts/print-daemon/standalone --target es2022 --module es2022 --moduleResolution node"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
