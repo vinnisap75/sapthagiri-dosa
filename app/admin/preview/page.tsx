@@ -25,6 +25,10 @@ function CustomerPreviewInner() {
   const [serviceId, setServiceId] = useState<ServiceWindow["id"]>("saturday");
   const [tableId, setTableId] = useState<string>(TABLES[0]?.id ?? "A1");
   const [showStatus, setShowStatus] = useState(false);
+  // Test Mode — when ON, orders submitted from this iframe are flagged
+  // is_test=true so they don't show up in the kitchen Active tab by
+  // default and never count toward Wednesday analytics.
+  const [testMode, setTestMode] = useState(true);
 
   const service = useMemo(
     () => SERVICES.find((s) => s.id === serviceId)!,
@@ -33,10 +37,10 @@ function CustomerPreviewInner() {
 
   // The order page accepts ?service= to force a specific window — this
   // bypasses the "are we open right now?" gate so we can preview Sat/Sun
-  // on a Thursday afternoon.
+  // on a Thursday afternoon. ?test=1 marks any submitted order is_test.
   const previewUrl = `/order?table=${encodeURIComponent(
     tableId
-  )}&service=${serviceId}&preview=1`;
+  )}&service=${serviceId}&preview=1${testMode ? "&test=1" : ""}`;
 
   return (
     <main className="min-h-screen bg-stone-50">
@@ -111,28 +115,38 @@ function CustomerPreviewInner() {
 
           <div>
             <div className="text-xs uppercase tracking-wider text-stone-500 mb-1.5">
-              View
+              Test Mode
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowStatus(false)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition ${
-                  !showStatus
-                    ? "bg-sapthagiri-burgundy text-white border-sapthagiri-burgundy"
-                    : "bg-white text-stone-700 border-stone-300 hover:border-stone-500"
-                }`}
-              >
-                Order page
-              </button>
-              <a
-                href={previewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 rounded-lg text-sm font-medium border border-stone-300 bg-white text-stone-700 hover:border-stone-500"
-              >
-                Open in new tab ↗
-              </a>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={testMode}
+                onChange={(e) => setTestMode(e.target.checked)}
+                className="w-5 h-5 accent-sapthagiri-burgundy"
+              />
+              <span className="text-sm">
+                {testMode ? (
+                  <span className="font-semibold text-yellow-700">
+                    🧪 ON — orders won't pollute stats
+                  </span>
+                ) : (
+                  <span className="text-stone-600">
+                    OFF — orders are real
+                  </span>
+                )}
+              </span>
+            </label>
+          </div>
+
+          <div>
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block px-4 py-2 rounded-lg text-sm font-medium border border-stone-300 bg-white text-stone-700 hover:border-stone-500"
+            >
+              Open in new tab ↗
+            </a>
           </div>
         </div>
 

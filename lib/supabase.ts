@@ -43,6 +43,9 @@ export interface OrderRow {
   rating: number | null;
   rating_at: string | null;
   rating_note: string | null;
+  /** Test order — submitted via /admin/preview with Test Mode on so
+   *  Sree can drop practice orders without polluting Wednesday stats. */
+  is_test: boolean;
 }
 
 export interface OrderItemRow {

@@ -204,6 +204,9 @@ function OrderInner() {
           status: "queued",
           total_cents: totalCents,
           party_size: partySize,
+          // Test mode — when /admin/preview submits with ?test=1 the
+          // order lands flagged so kitchen + stats can hide it.
+          is_test: testMode,
         })
         .select()
         .single();
@@ -267,6 +270,7 @@ function OrderInner() {
   //     admin can preview Sat/Sun limited menu mid-week without time travel
   // After a Wednesday close, we surface the Google review CTA.
   const previewMode = params.get("preview") === "1";
+  const testMode = params.get("test") === "1";
   const forcedServiceId = params.get("service");
   const forcedService = forcedServiceId
     ? SERVICES.find((s) => s.id === forcedServiceId) ?? null
@@ -374,6 +378,11 @@ function OrderInner() {
           <div>
             <div className="text-xs uppercase tracking-[0.25em] text-sapthagiri-gold">
               Sapthagiri
+              {testMode && (
+                <span className="ml-2 inline-block bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold">
+                  TEST MODE
+                </span>
+              )}
             </div>
             <h1 className="text-xl font-display">Order — Table {tableId}</h1>
           </div>
