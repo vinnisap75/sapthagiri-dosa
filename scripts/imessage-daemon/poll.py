@@ -99,11 +99,19 @@ def send_imessage(recipient: str, message: str) -> None:
     """
     safe_msg = _escape_applescript(message)
     safe_to = _escape_applescript(recipient)
+    # Messages automation is fragile on recent macOS: the classic
+    # "buddy of service" lookup throws when no prior conversation exists.
+    # Try it first, then fall back to "participant of account", which
+    # succeeds on versions where the buddy form does not.
     script = (
         'tell application "Messages"\n'
-        '    set targetService to first service whose service type = iMessage\n'
-        f'    set targetBuddy to buddy "{safe_to}" of targetService\n'
-        f'    send "{safe_msg}" to targetBuddy\n'
+        "    try\n"
+        "        set targetService to 1st service whose service type = iMessage\n"
+        f'        send "{safe_msg}" to buddy "{safe_to}" of targetService\n'
+        "    on error\n"
+        "        set targetAccount to 1st account whose service type = iMessage\n"
+        f'        send "{safe_msg}" to participant "{safe_to}" of targetAccount\n'
+        "    end try\n"
         "end tell\n"
     )
     subprocess.run(

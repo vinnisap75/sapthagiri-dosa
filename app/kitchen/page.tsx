@@ -21,6 +21,7 @@ interface FullOrder {
 type Filter = "all" | "served" | "prep";
 type CookingMode = "vinni" | "ravi";
 const COOKING_MODE_KEY = "sapthagiri-kitchen-cooking-mode";
+const SHOW_TEST_KEY = "sapthagiri-kitchen-show-test";
 
 export default function KitchenPage() {
   return (
@@ -183,6 +184,24 @@ function KitchenInner() {
       const next: CookingMode = prev === "vinni" ? "ravi" : "vinni";
       try {
         window.localStorage.setItem(COOKING_MODE_KEY, next);
+      } catch {}
+      return next;
+    });
+  }
+
+  // Show test orders toggle — off by default so practice orders stay
+  // hidden from tonight's live board.
+  const [showTest, setShowTest] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(SHOW_TEST_KEY);
+    if (saved === "1") setShowTest(true);
+  }, []);
+  function toggleShowTest() {
+    setShowTest((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SHOW_TEST_KEY, next ? "1" : "0");
       } catch {}
       return next;
     });
@@ -389,23 +408,36 @@ function KitchenInner() {
       ),
     [orders]
   );
-  const ready = useMemo(
-    () => orders.filter((o) => o.order.status === "ready"),
+  // Filter out test orders unless the master explicitly enabled
+  // "Show test orders" — keeps the real board uncluttered.
+  const visibleOrders = useMemo(
+    () => (showTest ? orders : orders.filter((o) => !o.order.is_test)),
+    [orders, showTest]
+  );
+  const testCount = useMemo(
+    () =>
+      orders.filter((o) => o.order.is_test && o.order.status !== "served")
+        .length,
     [orders]
+  );
+
+  const ready = useMemo(
+    () => visibleOrders.filter((o) => o.order.status === "ready"),
+    [visibleOrders]
   );
   const queued = useMemo(
-    () => orders.filter((o) => o.order.status === "queued"),
-    [orders]
+    () => visibleOrders.filter((o) => o.order.status === "queued"),
+    [visibleOrders]
   );
   const cooking = useMemo(
-    () => orders.filter((o) => o.order.status === "cooking"),
-    [orders]
+    () => visibleOrders.filter((o) => o.order.status === "cooking"),
+    [visibleOrders]
   );
 
   // Served orders go in their own tab so the master can review them later.
   const served = useMemo(
     () =>
-      orders
+      visibleOrders
         .filter((o) => o.order.status === "served")
         .sort(
           (a, b) =>
@@ -577,6 +609,19 @@ function KitchenInner() {
             >
               👨‍🍳 {cookLabel(cookingMode)}
             </button>
+            {/* Test orders toggle — off by default, shows a badge with
+                the hidden count so Sree knows test orders are queued. */}
+            <button
+              onClick={toggleShowTest}
+              className={`text-xs uppercase tracking-wider px-2 py-1 rounded transition ${
+                showTest
+                  ? "bg-yellow-400 text-black"
+                  : "text-sapthagiri-gold hover:text-white border border-sapthagiri-gold/60"
+              }`}
+              title="Show/hide test orders"
+            >
+              🧪 {showTest ? "Tests ON" : `Tests hidden${testCount ? ` (${testCount})` : ""}`}
+            </button>
             <div className="opacity-80 tabular-nums">
               {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </div>
@@ -584,24 +629,8 @@ function KitchenInner() {
           </div>
         </div>
 
-        {/* COOKING NOW header — big, glanceable banner so the runner
-            knows where to pick up the dosa. Only shows on Wed (the only
-            day with ambiguity between two cooks). */}
-        {showCookingNowHeader && (
-          <div className="bg-sapthagiri-gold text-sapthagiri-burgundy">
-            <div className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-center gap-3">
-              <span className="text-xs uppercase tracking-[0.3em] font-semibold">
-                Cooking now
-              </span>
-              <span className="text-3xl font-display font-bold tracking-wide">
-                {cookLabel(cookingMode)}
-              </span>
-              <span className="text-xs opacity-80 hidden sm:inline">
-                (tap the chip in the header to swap)
-              </span>
-            </div>
-          </div>
-        )}
+        {/* COOKING NOW banner removed per Sree — the chef chip in the
+            header is enough indication of who's cooking. */}
 
         {/* Status filter tabs (mimics the DoorDash-style header) */}
         <div className="max-w-7xl mx-auto px-6 pb-3 flex gap-2 overflow-x-auto">
