@@ -79,26 +79,26 @@ jobs:
           fi
           echo "✓ no secrets found in tracked files"
 
-      - name: Scan for PII leaks in customer-facing routes
-        # After the RLS lockdown (migration 001), the anon client may not
-        # SELECT customer_name / notes / rating_note. These columns should
-        # only appear in staff routes (app/admin/**, app/kitchen/**) or in
-        # the SQL files themselves. If they appear in app/order or
-        # app/status outside the RPC plumbing, the customer page is reading
-        # PII directly — block it.
+      - name: Scan for PII reads in customer-facing routes
+        # After the RLS lockdown (migration 001), anon clients can NOT
+        # do `sb.from('orders').select(...)` — they must use the RPCs.
+        # This check flags any NEW direct .from('orders') / .from('order_items')
+        # read introduced in app/order or app/status, which would bring
+        # back the broken-status-page bug.
+        # Legitimate patterns (INSERT object building, reflecting the
+        # customer's own data back to them) are allowed.
         run: |
-          set -e
-          PII_PAT='customer_name|rating_note|\.notes\b'
-          # Limit to the two customer-facing route trees, exclude
-          # comments and the rating-submit path (which sets, not reads).
-          if git grep -nE "$PII_PAT" -- 'app/order/**' 'app/status/**' \
-              | grep -v -E '(//|/\*|\*\s)' \
-              | grep -v 'rating_note: ratingNote'; then
-            echo "::warning::PII column referenced in customer-facing route."
-            echo "::warning::If this is expected (e.g. rating submit), update the CI exclusion list."
+          set +e
+          # Match: sb.from('orders').select OR sb.from("order_items").select
+          DIRECT_READ='\.from\(["'"'"']order(_items)?["'"'"']\)\.select'
+          MATCHES=$(git grep -nE "$DIRECT_READ" -- 'app/order/**' 'app/status/**')
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Direct .from('orders') / .from('order_items') .select read in customer route:"
+            echo "$MATCHES"
+            echo "::error::Use sb.rpc('get_order_status', ...) / sb.rpc('get_order_items', ...) instead."
             exit 1
           fi
-          echo "✓ no PII column reads in customer-facing routes"
+          echo "✓ no direct .from() reads in customer-facing routes (RPCs only)"
 
       - name: Ensure .env.local is not tracked
         run: |
