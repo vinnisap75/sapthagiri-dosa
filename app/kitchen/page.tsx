@@ -103,6 +103,28 @@ function cookLabel(mode: CookingMode): string {
   return mode === "vinni" ? "VINNI" : "RAVI";
 }
 
+/** Fire a desktop (Web/Chrome) notification. Best-effort: silently no-ops if
+ *  the browser lacks support or permission isn't granted. `tag` collapses
+ *  bursts so simultaneous orders don't stack multiple toasts. */
+function fireNotification(title: string, body: string, tag: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification(title, {
+      body,
+      tag,
+      icon: "/sapthagiri-wordmark-white.png",
+      badge: "/sapthagiri-wordmark-white.png",
+    });
+  } catch {
+    /* ignore — a notification is a nicety, never block the board */
+  }
+}
+
+/** Backlog alert threshold: warn when this many dosas are queued but not yet
+ *  started cooking, so the master knows to fire up more tava space. */
+const BACKLOG_DOSA_THRESHOLD = 12;
+
 /** Default cook based on the active service. */
 function defaultCookingMode(): CookingMode {
   const svc = getActiveService();
@@ -166,6 +188,10 @@ function KitchenInner() {
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
   const audioCtxRef = useRef<AudioContext | null>(null);
   const chimeMp3Ref = useRef<HTMLAudioElement | null>(null);
+  // Backlog of dosas queued-but-not-cooking; banner shows while at/over the
+  // threshold. The ref prevents re-firing the desktop notification every refresh.
+  const [backlogDosas, setBacklogDosas] = useState(0);
+  const backlogNotifiedRef = useRef(false);
 
   // Cooking Mode — which physical station has the tablet right now.
   // Persisted to localStorage so a refresh doesn't reset.
@@ -236,6 +262,14 @@ function KitchenInner() {
     setSoundOn(true);
 
     function prime() {
+      // Re-request notification permission on first gesture if undecided.
+      if (
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "default"
+      ) {
+        Notification.requestPermission().catch(() => {});
+      }
       if (audioCtxRef.current) return;
       try {
         const AC =
@@ -294,6 +328,25 @@ function KitchenInner() {
     try {
       playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
     } catch {}
+    // Ask for desktop-notification permission in this same user gesture, then
+    // pop a confirmation toast so the master sees/hears it works right away.
+    if (typeof window !== "undefined" && "Notification" in window) {
+      const confirm = () =>
+        fireNotification(
+          "Notifications on",
+          "You'll be alerted here on new orders and dosa backlogs.",
+          "sapthagiri-confirm"
+        );
+      if (Notification.permission === "granted") {
+        confirm();
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission()
+          .then((p) => {
+            if (p === "granted") confirm();
+          })
+          .catch(() => {});
+      }
+    }
     setSoundOn(true);
     try {
       window.localStorage.setItem(SOUND_PREF_KEY, "1");
@@ -323,23 +376,58 @@ function KitchenInner() {
         // Detect newly-arrived ORDERS (still in active states) and chime.
         const prevSize = seenOrderIdsRef.current.size;
         const newActiveIds: string[] = [];
+        const newOrderLabels: string[] = [];
         rows.forEach((r) => {
           if (
             !seenOrderIdsRef.current.has(r.id) &&
             ["queued", "cooking"].includes(r.status)
           ) {
             newActiveIds.push(r.id);
+            const count = (r.order_items ?? []).reduce((a, i) => a + i.quantity, 0);
+            newOrderLabels.push(`Table ${r.table_id} · ${count} item${count === 1 ? "" : "s"}`);
           }
           seenOrderIdsRef.current.add(r.id);
         });
         // Skip the chime on the very first load (everything is "new" then).
-        if (
-          prevSize > 0 &&
-          newActiveIds.length > 0 &&
-          soundOn &&
-          audioCtxRef.current
-        ) {
-          playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
+        if (prevSize > 0 && newActiveIds.length > 0 && soundOn) {
+          if (audioCtxRef.current) {
+            playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
+          }
+          // Desktop notification (works even when the tab is unfocused).
+          fireNotification(
+            newOrderLabels.length === 1
+              ? "New order — Sapthagiri"
+              : `${newOrderLabels.length} new orders — Sapthagiri`,
+            newOrderLabels.join("\n"),
+            "sapthagiri-new-order"
+          );
+        }
+
+        // Backlog: count dosas that are QUEUED and not yet started cooking.
+        const queuedDosas = rows.reduce((sum, r) => {
+          if (r.status !== "queued") return sum;
+          return (
+            sum +
+            (r.order_items ?? []).reduce(
+              (a, i) =>
+                a + (i.category === "dosa" && !i.started_at && !i.is_done ? i.quantity : 0),
+              0
+            )
+          );
+        }, 0);
+        setBacklogDosas(queuedDosas);
+        if (queuedDosas >= BACKLOG_DOSA_THRESHOLD) {
+          if (!backlogNotifiedRef.current) {
+            backlogNotifiedRef.current = true;
+            fireNotification(
+              "Dosa backlog building",
+              `${queuedDosas} dosas waiting in the queue — fire up more tava space.`,
+              "sapthagiri-backlog"
+            );
+          }
+        } else {
+          // Reset once it clears so the next spike re-alerts.
+          backlogNotifiedRef.current = false;
         }
 
         setOrders(
