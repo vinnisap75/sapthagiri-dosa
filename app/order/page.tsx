@@ -717,10 +717,14 @@ function OrderInner() {
             </div>
             <button
               onClick={() => setShowPreview(true)}
-              disabled={lines.length === 0}
-              className="btn-primary text-base px-6 py-3"
+              disabled={lines.length === 0 || !partySize}
+              className="btn-primary text-base px-6 py-3 whitespace-nowrap"
             >
-              Review →
+              {lines.length === 0
+                ? "Review →"
+                : !partySize
+                ? "Add party size"
+                : "Review →"}
             </button>
           </div>
         </div>
