@@ -862,34 +862,6 @@ function FixedItemRow({
           </button>
         </div>
       </div>
-      {allowCustomization && line && line.qty > 0 && (
-        <>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <PillToggle
-              label="✨ Crispy"
-              active={line.crispiness === "crispy"}
-              onClick={() => onSetCrispiness(line.lineId, "crispy")}
-            />
-            <PillToggle
-              label="☁️ Soft"
-              active={line.crispiness === "soft"}
-              onClick={() => onSetCrispiness(line.lineId, "soft")}
-            />
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <PillToggle
-              label="🧈 Amul Ghee"
-              active={line.cookMedium === "ghee"}
-              onClick={() => onSetCookMedium(line.lineId, "ghee")}
-            />
-            <PillToggle
-              label="🛢️ Oil"
-              active={line.cookMedium === "oil"}
-              onClick={() => onSetCookMedium(line.lineId, "oil")}
-            />
-          </div>
-        </>
-      )}
       {allowCustomization && line && line.qty > 0 && item.hasMasalaFilling && (
         <label className="mt-2 flex items-center gap-2 text-sm bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 cursor-pointer">
           <input
@@ -1019,31 +991,6 @@ function BuildYourOwn({
                     </button>
                   );
                 })}
-              </div>
-
-              <div className="mt-2 grid grid-cols-2 gap-1.5">
-                <PillToggle
-                  label="✨ Crispy"
-                  active={line.crispiness === "crispy"}
-                  onClick={() => onSetCrispiness(line.lineId, "crispy")}
-                />
-                <PillToggle
-                  label="☁️ Soft"
-                  active={line.crispiness === "soft"}
-                  onClick={() => onSetCrispiness(line.lineId, "soft")}
-                />
-              </div>
-              <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                <PillToggle
-                  label="🧈 Ghee"
-                  active={line.cookMedium === "ghee"}
-                  onClick={() => onSetCookMedium(line.lineId, "ghee")}
-                />
-                <PillToggle
-                  label="🛢️ Oil"
-                  active={line.cookMedium === "oil"}
-                  onClick={() => onSetCookMedium(line.lineId, "oil")}
-                />
               </div>
 
               {/* Masala-on-side only makes sense for items that have a
