@@ -137,21 +137,6 @@ function Landing() {
         </Link>
 
         <Link
-          href="/admin/printer"
-          className="card p-6 hover:shadow-md transition block"
-        >
-          <div className="text-3xl mb-2">🧾</div>
-          <h2 className="text-lg font-semibold">Kitchen Printer</h2>
-          <p className="text-sm text-stone-600 mt-1">
-            Pair the thermal printer + test print. Auto-prints Sat/Sun
-            orders for Ravi.
-          </p>
-          <p className="text-xs mt-3 text-sapthagiri-burgundy font-semibold">
-            Open printer settings →
-          </p>
-        </Link>
-
-        <Link
           href="/admin/agent-log"
           className="card p-6 hover:shadow-md transition block"
         >

@@ -7,17 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
-    "bridge": "node scripts/print-bridge/server.mjs",
-    "daemon": "tsx scripts/print-daemon/daemon.mts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "next": "14.2.13",
     "qrcode.react": "^4.0.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "tsx": "^4.19.1"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",
