@@ -183,6 +183,13 @@ function KitchenInner() {
   //  AudioContext, but we remember the preference and remind the master.)
   const SOUND_PREF_KEY = "sapthagiri-kitchen-sound-on";
   const [soundOn, setSoundOn] = useState(false);
+  // Mirror soundOn into a ref so the realtime subscription closure (mounted
+  // once with []) always reads the LIVE value instead of the stale `false`
+  // captured at mount. Without this, chime + notifications never fire.
+  const soundOnRef = useRef(false);
+  useEffect(() => {
+    soundOnRef.current = soundOn;
+  }, [soundOn]);
 
   // Track which order IDs we've already announced so we only chime on truly new ones.
   const seenOrderIdsRef = useRef<Set<string>>(new Set());
@@ -389,7 +396,8 @@ function KitchenInner() {
           seenOrderIdsRef.current.add(r.id);
         });
         // Skip the chime on the very first load (everything is "new" then).
-        if (prevSize > 0 && newActiveIds.length > 0 && soundOn) {
+        // Read soundOnRef (not soundOn) — this closure was captured at mount.
+        if (prevSize > 0 && newActiveIds.length > 0 && soundOnRef.current) {
           if (audioCtxRef.current) {
             playOrderChime(audioCtxRef.current, chimeMp3Ref.current);
           }
