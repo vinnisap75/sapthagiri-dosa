@@ -16,13 +16,10 @@ import {
   ServiceWindow,
 } from "@/lib/services";
 import { BrandLogo } from "@/app/_components/BrandLogo";
-import { estimateWaitMinutes, OrderLite } from "@/lib/timing";
-
-// Per-device reorder cooldown. After ordering, this device can't order again
-// until its order is served OR a cooldown elapses. Base is 5 min, but grows to
-// match the current kitchen wait when the queue is long.
+// Per-device reorder cooldown. After ordering, this device cannot order again
+// for a fixed 20 minutes — regardless of whether the first order is served yet.
 const REORDER_KEY = "sapthagiri-last-order";
-const REORDER_BASE_COOLDOWN_MIN = 5;
+const REORDER_COOLDOWN_MIN = 20;
 
 /** One configurable row in the cart. Each customizable item may have many
  *  lines (each with its own toppings); non-customizable items share a line. */
@@ -80,8 +77,9 @@ function OrderInner() {
     };
   }, []);
 
-  // On load, restore any active reorder cooldown for this device. If the prior
-  // order is already served/cancelled (or the cooldown lapsed), clear it.
+  // On load, restore any active reorder cooldown for this device. The gate is a
+  // strict 20-minute timer from the first order — it does NOT lift early when
+  // the order is served. Only clears once the 20 minutes have fully elapsed.
   useEffect(() => {
     if (typeof window === "undefined") return;
     let rec: { orderId: string; until: number } | null = null;
@@ -94,21 +92,7 @@ function OrderInner() {
       try { window.localStorage.removeItem(REORDER_KEY); } catch {}
       return;
     }
-    const active = rec;
-    supabase()
-      .rpc("get_order_status", { p_id: active.orderId })
-      .then(
-        ({ data }) => {
-          const st = data?.[0]?.status;
-          if (!st || st === "served" || st === "cancelled") {
-            try { window.localStorage.removeItem(REORDER_KEY); } catch {}
-            setReorderBlock(null);
-          } else {
-            setReorderBlock(active);
-          }
-        },
-        () => setReorderBlock(active) // offline → keep the gate on
-      );
+    setReorderBlock(rec);
   }, []);
 
   // Tick the countdown and auto-lift the gate when the cooldown ends.
@@ -235,8 +219,24 @@ function OrderInner() {
       setError("Invalid table — please rescan the QR at your table.");
       return;
     }
+    if (!partySize) {
+      setError("Please tell us how many people are at your table first.");
+      return;
+    }
     if (lines.length === 0) {
       setError("Add at least one item before placing the order.");
+      return;
+    }
+    // Dosa cap: a table may order at most (party size + 4) dosas per order.
+    const dosaCount = lines.reduce((sum, l) => {
+      const m = MENU.find((x) => x.id === l.itemId);
+      return sum + (m?.category === "dosa" ? l.qty : 0);
+    }, 0);
+    const dosaCap = partySize + 4;
+    if (dosaCount > dosaCap) {
+      setError(
+        `Up to ${dosaCap} dosas for a table of ${partySize}. Remove ${dosaCount - dosaCap} or ask a server for a larger order.`
+      );
       return;
     }
     setSubmitting(true);
@@ -294,37 +294,16 @@ function OrderInner() {
       const { error: itemsErr } = await sb.from("order_items").insert(itemRows);
       if (itemsErr) throw itemsErr;
 
-      // Arm the per-device reorder cooldown. Base 5 min, extended to the live
-      // kitchen wait when the queue is long. Test orders don't arm the gate.
+      // Arm the per-device reorder cooldown: a fixed 20 minutes from this order.
+      // Test orders don't arm the gate (so staff can keep testing).
       if (!testMode) {
-        let cooldownMin = REORDER_BASE_COOLDOWN_MIN;
-        try {
-          const { data: q } = await sb.rpc("get_active_queue");
-          const queueLite: OrderLite[] = (q ?? []).map((row: any) => ({
-            id: row.id,
-            status: row.status,
-            created_at: row.created_at,
-            cooking_started_at: row.cooking_started_at,
-            items: (row.item_menu_ids ?? []).map((mid: string, i: number) => ({
-              menu_item_id: mid,
-              quantity: row.item_quantities?.[i] ?? 1,
-            })),
-          }));
-          const target: OrderLite = {
-            id: orderRow.id,
-            status: "queued",
-            created_at: orderRow.created_at,
-            cooking_started_at: null,
-            items: lines.map((l) => ({ menu_item_id: l.itemId, quantity: l.qty })),
-          };
-          cooldownMin = Math.max(REORDER_BASE_COOLDOWN_MIN, Math.ceil(estimateWaitMinutes(target, queueLite)));
-        } catch {
-          /* best-effort — fall back to the base cooldown */
-        }
         try {
           window.localStorage.setItem(
             REORDER_KEY,
-            JSON.stringify({ orderId: orderRow.id, until: Date.now() + cooldownMin * 60_000 })
+            JSON.stringify({
+              orderId: orderRow.id,
+              until: Date.now() + REORDER_COOLDOWN_MIN * 60_000,
+            })
           );
         } catch {}
       }
@@ -461,9 +440,9 @@ function OrderInner() {
           </h1>
           <p className="text-sm text-stone-700 mt-4">
             You&apos;ve already placed an order from this device. To keep the
-            kitchen flowing, you can order again in about{" "}
-            <strong className="tabular-nums">{remainMin} min</strong> — or as
-            soon as your current order is served.
+            kitchen flowing, you can place another order in about{" "}
+            <strong className="tabular-nums">{remainMin} min</strong>. Need
+            more sooner? Please flag down a server.
           </p>
           <a
             href={`/status/${reorderBlock.orderId}`}
@@ -580,13 +559,17 @@ function OrderInner() {
           </section>
         )}
 
-        {/* Party size — helps the server know who to expect at the table */}
-        <section className="card p-4">
+        {/* Party size — REQUIRED. Drives the per-order dosa cap (party + 4). */}
+        <section
+          className={`card p-4 ${!partySize ? "ring-2 ring-sapthagiri-gold" : ""}`}
+        >
           <h2 className="font-display text-lg text-sapthagiri-burgundy mb-1">
-            How many people at your table?
+            How many people at your table?{" "}
+            <span className="text-sapthagiri-gold">*</span>
           </h2>
           <p className="text-xs text-stone-500 mb-3">
-            So the server knows how many to look after.
+            Required — sets how many dosas this table can order (up to{" "}
+            {partySize ? partySize + 4 : "party + 4"}).
           </p>
           <div className="flex flex-wrap gap-2">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
