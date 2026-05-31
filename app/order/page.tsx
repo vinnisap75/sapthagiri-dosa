@@ -82,13 +82,6 @@ function OrderInner() {
   // the order is served. Only clears once the 20 minutes have fully elapsed.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Demo hook: ?timerdemo=1 shows the reorder gate with a fresh 20-min
-    // countdown WITHOUT placing an order or writing localStorage — for
-    // previewing the customer timer screen.
-    if (new URLSearchParams(window.location.search).get("timerdemo") === "1") {
-      setReorderBlock({ orderId: "demo", until: Date.now() + REORDER_COOLDOWN_MIN * 60_000 });
-      return;
-    }
     let rec: { orderId: string; until: number } | null = null;
     try {
       rec = JSON.parse(window.localStorage.getItem(REORDER_KEY) || "null");
@@ -431,10 +424,8 @@ function OrderInner() {
   }
 
   // Reorder cooldown gate — replaces the menu for real customers who already
-  // ordered from this device. Staff / preview / test bypass it — except when
-  // ?timerdemo=1 is set, so we can preview the timer even while logged in.
-  const timerDemo = params.get("timerdemo") === "1";
-  const reorderBypass = !timerDemo && (staffLoggedIn || previewMode || testMode);
+  // ordered from this device. Staff / preview / test bypass it.
+  const reorderBypass = staffLoggedIn || previewMode || testMode;
   if (reorderBlock && !reorderBypass) {
     const remainMin = Math.max(1, Math.ceil((reorderBlock.until - nowMs) / 60_000));
     return (
