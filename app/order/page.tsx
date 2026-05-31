@@ -431,8 +431,10 @@ function OrderInner() {
   }
 
   // Reorder cooldown gate — replaces the menu for real customers who already
-  // ordered from this device. Staff / preview / test bypass it.
-  const reorderBypass = staffLoggedIn || previewMode || testMode;
+  // ordered from this device. Staff / preview / test bypass it — except when
+  // ?timerdemo=1 is set, so we can preview the timer even while logged in.
+  const timerDemo = params.get("timerdemo") === "1";
+  const reorderBypass = !timerDemo && (staffLoggedIn || previewMode || testMode);
   if (reorderBlock && !reorderBypass) {
     const remainMin = Math.max(1, Math.ceil((reorderBlock.until - nowMs) / 60_000));
     return (
