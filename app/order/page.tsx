@@ -262,9 +262,11 @@ function OrderInner() {
           status: "queued",
           total_cents: totalCents,
           party_size: partySize,
-          // Test mode — when /admin/preview submits with ?test=1 the
-          // order lands flagged so kitchen + stats can hide it.
-          is_test: testMode,
+          // Test mode — flagged so kitchen + stats can hide it. True when
+          // ?test=1 (admin preview) OR the order is from the demo TEST table,
+          // so demoing the flow never pollutes real analytics. The customer
+          // experience (timer, dosa cap) stays fully active on the TEST table.
+          is_test: testMode || tableId === "TEST",
         })
         .select()
         .single();

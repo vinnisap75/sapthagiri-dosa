@@ -32,9 +32,17 @@ export const TABLES: DiningTable[] = [
   { id: "C3", seats: 4, section: "C" },
   { id: "C4", seats: 4, section: "C" },
 
+  // Demo/training table — for showing the flow (timer, cap, kitchen board)
+  // without using a real table. Orders from TEST auto-flag is_test, so they
+  // never hit analytics. Safe to scan/demo any time.
+  { id: "TEST", seats: 4, section: "Other" },
+
   // Station, PURV, and Reserved areas intentionally excluded from QR codes —
   // they're not customer-facing tables.
 ];
+
+/** Demo/training table id — orders from it are auto-flagged is_test. */
+export const DEMO_TABLE_ID = "TEST";
 
 export const TABLE_IDS: string[] = TABLES.map((t) => t.id);
 
