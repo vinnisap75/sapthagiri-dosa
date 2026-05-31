@@ -652,8 +652,8 @@ function OrderInner() {
 
         {dosaCapReached && (
           <div className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-sm text-amber-900">
-            <strong>Max {dosaCap} dosas</strong> for a table of {partySize}.
-            Ask a server if you need more.
+            <strong>Whoa, {dosaCap} dosas already! 🫓</strong> Let&apos;s fire up
+            this batch first — you can order another round in a bit.
           </div>
         )}
 
