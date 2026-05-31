@@ -82,6 +82,13 @@ function OrderInner() {
   // the order is served. Only clears once the 20 minutes have fully elapsed.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Demo hook: ?timerdemo=1 shows the reorder gate with a fresh 20-min
+    // countdown WITHOUT placing an order or writing localStorage — for
+    // previewing the customer timer screen.
+    if (new URLSearchParams(window.location.search).get("timerdemo") === "1") {
+      setReorderBlock({ orderId: "demo", until: Date.now() + REORDER_COOLDOWN_MIN * 60_000 });
+      return;
+    }
     let rec: { orderId: string; until: number } | null = null;
     try {
       rec = JSON.parse(window.localStorage.getItem(REORDER_KEY) || "null");
