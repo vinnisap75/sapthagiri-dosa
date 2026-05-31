@@ -487,6 +487,16 @@ function OrderInner() {
   const customDosaLines = lines.filter((l) => l.itemId === "custom-dosa");
   const customUttapamLines = lines.filter((l) => l.itemId === "custom-uttapam");
 
+  // Per-order dosa cap = party size + 4. Disable the + button (and show a
+  // message) at the limit so the customer is stopped here, not silently at
+  // "send to kitchen" — which looks broken.
+  const dosaTotal = lines.reduce((sum, l) => {
+    const m = MENU.find((x) => x.id === l.itemId);
+    return sum + (m?.category === "dosa" ? l.qty : 0);
+  }, 0);
+  const dosaCap = partySize ? partySize + 4 : Infinity;
+  const dosaCapReached = dosaTotal >= dosaCap;
+
   return (
     <main className="min-h-screen pb-40">
       <header className="bg-sapthagiri-burgundy text-white">
@@ -634,9 +644,17 @@ function OrderInner() {
                 onSetCookMedium={setLineCookMedium}
                 allowJainModifier={allowJainModifier}
                 allowCustomization={allowCustomization}
+                addDisabled={dosaCapReached}
               />
             ))}
           </Section>
+        )}
+
+        {dosaCapReached && (
+          <div className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-sm text-amber-900">
+            <strong>Max {dosaCap} dosas</strong> for a table of {partySize}.
+            Ask a server if you need more.
+          </div>
         )}
 
         {uttapams.length > 0 && (
@@ -803,6 +821,7 @@ function FixedItemRow({
   onSetCookMedium,
   allowJainModifier = true,
   allowCustomization = true,
+  addDisabled = false,
 }: {
   item: MenuItem;
   line?: Line;
@@ -814,6 +833,8 @@ function FixedItemRow({
   allowJainModifier?: boolean;
   /** When false (buffet service) hide ALL per-item options — add/subtract only. */
   allowCustomization?: boolean;
+  /** When true (dosa cap reached) the + button is disabled. */
+  addDisabled?: boolean;
 }) {
   const qty = line?.qty ?? 0;
   return (
@@ -842,7 +863,8 @@ function FixedItemRow({
           <span className="w-6 text-center font-semibold">{qty}</span>
           <button
             onClick={onAdd}
-            className="w-8 h-8 rounded-full bg-sapthagiri-burgundy text-white text-lg"
+            disabled={addDisabled}
+            className="w-8 h-8 rounded-full bg-sapthagiri-burgundy text-white text-lg disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="increment"
           >
             +
