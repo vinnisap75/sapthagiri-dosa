@@ -1049,6 +1049,44 @@ function BatchPanel({
             {busy ? "Sending…" : `✓ Batch of ${active.length} done`}
           </button>
         </div>
+
+        {/* Count by type — the headline for the dosa master: how many of each
+            dosa to make this batch. Jain count called out separately. */}
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {(() => {
+            const byType = new Map<string, { total: number; jain: number }>();
+            for (const e of active) {
+              const cur = byType.get(e.item.name) ?? { total: 0, jain: 0 };
+              cur.total += 1;
+              if (e.item.no_onion_garlic) cur.jain += 1;
+              byType.set(e.item.name, cur);
+            }
+            return Array.from(byType.entries())
+              .sort((a, b) => b[1].total - a[1].total)
+              .map(([name, c]) => (
+                <div
+                  key={name}
+                  className="rounded-lg bg-sapthagiri-cream border border-sapthagiri-gold/50 px-3 py-2 flex items-baseline gap-2"
+                >
+                  <span className="text-3xl font-display font-bold tabular-nums text-sapthagiri-burgundy leading-none">
+                    {c.total}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="font-semibold leading-tight block truncate">
+                      {name}
+                    </span>
+                    {c.jain > 0 && (
+                      <span className="text-[11px] font-bold text-amber-800">
+                        {c.jain} JAIN
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ));
+          })()}
+        </div>
+
+        {/* Per-dosa detail (table tags) below the headline counts. */}
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {active.map((e, i) => (
             <Card key={e.item.id} entry={e} n={i + 1} />
