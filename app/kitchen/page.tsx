@@ -125,6 +125,10 @@ function fireNotification(title: string, body: string, tag: string) {
  *  started cooking, so the master knows to fire up more tava space. */
 const BACKLOG_DOSA_THRESHOLD = 12;
 
+/** How many dosas the master cooks per batch — the prep board shows this many
+ *  as the active batch, the same many as "up next". */
+const BATCH_SIZE = 12;
+
 /** Default cook based on the active service. */
 function defaultCookingMode(): CookingMode {
   const svc = getActiveService();
@@ -563,6 +567,21 @@ function KitchenInner() {
     [filter, queued, cooking, ready]
   );
 
+  // Batch view: flatten every NOT-done dosa across active orders into one FIFO
+  // list (oldest order first). The first BATCH_SIZE are the active batch, the
+  // next BATCH_SIZE are "up next", the rest are counted. Each entry keeps its
+  // order + item so "Batch done" can mark items + auto-serve fully-done orders.
+  const batchQueue = useMemo(() => {
+    if (filter !== "prep") return [] as { order: OrderRow; item: OrderItemRow }[];
+    const out: { order: OrderRow; item: OrderItemRow }[] = [];
+    for (const fo of [...queued, ...cooking]) {
+      for (const it of fo.items) {
+        if (!it.is_done) out.push({ order: fo.order, item: it });
+      }
+    }
+    return out;
+  }, [filter, queued, cooking]);
+
   // Cooking Mode visibility: COOKING NOW header is most useful on Wed
   // (two physical stations). On Sat/Sun there's only Ravi, so it's noise.
   const activeService = getActiveService();
@@ -588,6 +607,39 @@ function KitchenInner() {
     if (next === "served") patch.served_at = new Date().toISOString();
     const sb = supabase();
     await sb.from("orders").update(patch).eq("id", order.id);
+  }
+
+  /** Mark the active batch (first BATCH_SIZE dosas in the FIFO queue) as done,
+   *  then auto-serve any order whose items are now ALL done. The DB guard
+   *  forbids queued→served directly, so we bump queued orders to cooking first.
+   *  Realtime then promotes the next batch automatically. */
+  async function completeBatch() {
+    const batch = batchQueue.slice(0, BATCH_SIZE);
+    if (batch.length === 0) return;
+    const sb = supabase();
+    const now = new Date().toISOString();
+
+    // 1) mark this batch's items done.
+    const itemIds = batch.map((b) => b.item.id);
+    await sb
+      .from("order_items")
+      .update({ is_done: true, done_at: now })
+      .in("id", itemIds);
+
+    // 2) for each distinct order touched, if every item is now done, serve it.
+    const doneIds = new Set(itemIds);
+    const touched = new Map<string, FullOrder>();
+    for (const b of batch) {
+      const fo = orders.find((o) => o.order.id === b.order.id);
+      if (fo) touched.set(b.order.id, fo);
+    }
+    for (const fo of touched.values()) {
+      const allDone = fo.items.every((i) => i.is_done || doneIds.has(i.id));
+      if (allDone && fo.order.status !== "served" && fo.order.status !== "cancelled") {
+        if (fo.order.status === "queued") await setStatus(fo.order, "cooking");
+        await setStatus(fo.order, "served");
+      }
+    }
   }
 
   /** Cycle an item through three states on each tap:
@@ -828,7 +880,11 @@ function KitchenInner() {
 
       <section className="max-w-7xl mx-auto px-6 py-6">
         {filter === "prep" && prepTotals ? (
-          <PrepPanel totals={prepTotals} />
+          <BatchPanel
+            queue={batchQueue}
+            totals={prepTotals}
+            onCompleteBatch={completeBatch}
+          />
         ) : visible.length === 0 ? (
           <div className="card p-8 text-center text-stone-500">
             No orders here yet. 🍃
@@ -877,6 +933,143 @@ function KitchenInner() {
         </section>
       )}
     </main>
+  );
+}
+
+/** Batch board for the dosa master: the first BATCH_SIZE dosas in the FIFO
+ *  queue are the ACTIVE batch (cook now), the next BATCH_SIZE are UP NEXT, the
+ *  rest are counted. "Batch of N done" marks the active batch done and
+ *  auto-serves any order whose dosas are now all complete. */
+function BatchPanel({
+  queue,
+  totals,
+  onCompleteBatch,
+}: {
+  queue: { order: OrderRow; item: OrderItemRow }[];
+  totals: PrepTotals;
+  onCompleteBatch: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const active = queue.slice(0, BATCH_SIZE);
+  const upNext = queue.slice(BATCH_SIZE, BATCH_SIZE * 2);
+  const remaining = Math.max(0, queue.length - BATCH_SIZE * 2);
+
+  if (queue.length === 0) {
+    return (
+      <div className="card p-8 text-center text-stone-500">
+        No dosas to cook right now. 🍃
+      </div>
+    );
+  }
+
+  async function handleDone() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onCompleteBatch();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const Card = ({
+    entry,
+    dim,
+    n,
+  }: {
+    entry: { order: OrderRow; item: OrderItemRow };
+    dim?: boolean;
+    n: number;
+  }) => (
+    <div
+      className={`rounded-lg border px-3 py-2 flex items-center gap-2 ${
+        dim
+          ? "bg-stone-50 border-stone-200 opacity-70"
+          : "bg-white border-sapthagiri-burgundy/40"
+      }`}
+    >
+      <span className="w-6 text-center text-xs font-bold tabular-nums text-stone-400">
+        {n}
+      </span>
+      <span className="flex-1 font-display font-bold leading-tight">
+        {entry.item.name}
+      </span>
+      <span className="text-xs font-semibold text-sapthagiri-burgundy whitespace-nowrap">
+        {entry.order.table_id}
+      </span>
+      {entry.item.no_onion_garlic && (
+        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1 rounded">
+          JAIN
+        </span>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="card p-4 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+        <div>
+          <div className="text-xs uppercase tracking-wider text-stone-500">
+            Dosas in queue
+          </div>
+          <div className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+            {queue.length}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wider text-stone-500">
+            Active orders
+          </div>
+          <div className="text-2xl font-display font-bold tabular-nums text-sapthagiri-burgundy">
+            {totals.totalActiveOrders}
+          </div>
+        </div>
+        {totals.jainCount > 0 && (
+          <div>
+            <div className="text-xs uppercase tracking-wider text-amber-900">
+              🚫 Jain
+            </div>
+            <div className="text-2xl font-display font-bold tabular-nums text-amber-900">
+              {totals.jainCount}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card p-4">
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="font-display text-lg text-sapthagiri-burgundy">
+            Cook now — batch of {active.length}
+          </h2>
+          <button
+            onClick={handleDone}
+            disabled={busy}
+            className="btn-primary text-base px-5 py-2.5 disabled:opacity-60"
+          >
+            {busy ? "Sending…" : `✓ Batch of ${active.length} done`}
+          </button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {active.map((e, i) => (
+            <Card key={e.item.id} entry={e} n={i + 1} />
+          ))}
+        </div>
+      </div>
+
+      {upNext.length > 0 && (
+        <div className="card p-4">
+          <h2 className="font-display text-lg text-stone-500 mb-3">
+            Up next — {upNext.length}
+            {remaining > 0 ? ` (+${remaining} more queued)` : ""}
+          </h2>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {upNext.map((e, i) => (
+              <Card key={e.item.id} entry={e} dim n={BATCH_SIZE + i + 1} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
